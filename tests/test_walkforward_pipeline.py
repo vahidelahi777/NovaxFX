@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from novax.data_sources import Bar
-from novax.dataquality import CheckResult, DataQualityReport
+from novax.dataquality import DataQualityReport
 from novax.engine import BacktestEngine, BarView, Position, Signal
 from novax.features import ema
 from novax.metrics import compute_basic_metrics

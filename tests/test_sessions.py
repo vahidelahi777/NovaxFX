@@ -4,12 +4,11 @@ silent backtest bugs (DST, London/NY mismatch weeks, naive datetimes).
 
 Run:  pytest -q libs/data/test_sessions.py
 """
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
 from novax.sessions import (
-    SESSIONS,
     active_sessions,
     is_fx_market_open,
     is_in_overlap,
@@ -18,7 +17,7 @@ from novax.sessions import (
     session_bounds_utc,
 )
 
-UTC = timezone.utc
+UTC = UTC
 
 
 def _hours(td: timedelta) -> float:

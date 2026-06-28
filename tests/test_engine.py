@@ -24,7 +24,6 @@ from novax.data_sources import Bar
 from novax.dataquality import CheckResult, DataQualityReport
 from novax.engine import (
     BacktestEngine,
-    BacktestResult,
     BarView,
     Position,
     Signal,
@@ -277,7 +276,7 @@ def test_equity_curve_is_cumulative_pnl():
     bars = _bar_range(6, start_price=1.1000, step=0.0001)
     result = _engine().run(bars, _LongThenShort(), _passing_report(6))
     cumulative = 0.0
-    for trade, eq in zip(result.trades, result.equity):
+    for trade, eq in zip(result.trades, result.equity, strict=True):
         cumulative += trade.pnl
         assert math.isclose(eq, cumulative, rel_tol=1e-12)
 
@@ -465,7 +464,7 @@ def test_ema_period_equals_one_matches_close():
     """EMA(1) = close price at every bar."""
     bars = [_bar(i, 1.1000 + i * 0.0005) for i in range(5)]
     result = ema(bars, 1)
-    for b, v in zip(bars, result):
+    for b, v in zip(bars, result, strict=True):
         assert math.isclose(v, b.close, rel_tol=1e-12)
 
 

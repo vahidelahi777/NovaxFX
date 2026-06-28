@@ -12,7 +12,6 @@ making them compatible with novax.lookahead.find_lookahead_indices.
 """
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
 
 from .data_sources import Bar

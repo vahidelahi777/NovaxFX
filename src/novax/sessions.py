@@ -16,7 +16,7 @@ START/END per your data vendor's convention; the correctness tests still hold.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, time, timezone
+from datetime import UTC, date, datetime, time
 from zoneinfo import ZoneInfo
 
 __all__ = [
@@ -60,12 +60,12 @@ SESSIONS: dict[str, SessionWindow] = {
 def _require_aware_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         raise ValueError("naive datetime rejected: all instants must be tz-aware UTC")
-    return dt.astimezone(timezone.utc)
+    return dt.astimezone(UTC)
 
 
 def _local_to_utc(tz: str, d: date, t: time) -> datetime:
     """Localize (d, t) in tz and return the UTC instant. zoneinfo applies DST for d."""
-    return datetime.combine(d, t, tzinfo=ZoneInfo(tz)).astimezone(timezone.utc)
+    return datetime.combine(d, t, tzinfo=ZoneInfo(tz)).astimezone(UTC)
 
 
 def session_bounds_utc(name: str, local_day: date) -> tuple[datetime, datetime]:
@@ -133,6 +133,4 @@ def is_fx_market_open(dt_utc: datetime) -> bool:
         return False
     if wd == 4 and t >= time(21, 0):  # Friday after 21:00 UTC
         return False
-    if wd == 6 and t < time(21, 0):   # Sunday before 21:00 UTC
-        return False
-    return True
+    return not (wd == 6 and t < time(21, 0))  # Sunday before 21:00 UTC
