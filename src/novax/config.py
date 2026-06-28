@@ -3,6 +3,7 @@
 Single source of truth for the go/no-go numbers so docs, code, and tests cannot
 drift apart. Frozen dataclass — settings are constants, not runtime-mutable state.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -26,7 +27,7 @@ class Settings:
 
     # --- go/no-go thresholds (mirror docs/phase-0/validation-protocol.md) ---
     min_history_years: int = 5
-    min_instruments_passing: int = 3       # of 4
+    min_instruments_passing: int = 3  # of 4
     min_oos_trades: int = 200
     min_walk_forward_window_pass_rate: float = 0.60
     max_drawdown_pct: float = 0.20
@@ -37,9 +38,9 @@ class Settings:
 
     # --- Phase 0.6 hardening thresholds ---
     min_deflated_sharpe_probability: float = 0.95  # DSR is a probability; doc ">0" was wrong
-    randomized_entry_percentile: float = 0.95       # must beat 95th pct of random entries
-    default_embargo_fraction: float = 0.01          # embargo as fraction of sample
-    fx_kurtosis_estimate: float = 6.0               # FX is fat-tailed; never assume 3 (normal)
+    randomized_entry_percentile: float = 0.95  # must beat 95th pct of random entries
+    default_embargo_fraction: float = 0.01  # embargo as fraction of sample
+    fx_kurtosis_estimate: float = 6.0  # FX is fat-tailed; never assume 3 (normal)
 
     # --- provenance / versioning ---
     feature_version: str = "0.0.0"

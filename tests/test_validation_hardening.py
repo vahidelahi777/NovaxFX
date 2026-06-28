@@ -1,4 +1,5 @@
 """Validation-hardening tests — prove the Critical/High fixes actually hold."""
+
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -63,8 +64,12 @@ def test_walk_forward_windows_non_overlapping_and_chronological():
 
 def test_walk_forward_requires_aware():
     with pytest.raises(ValueError):
-        walk_forward_windows(datetime(2020, 1, 1), datetime(2020, 2, 1),
-                             train=timedelta(days=10), test=timedelta(days=5))
+        walk_forward_windows(
+            datetime(2020, 1, 1),
+            datetime(2020, 2, 1),
+            train=timedelta(days=10),
+            test=timedelta(days=5),
+        )
 
 
 # --- purged k-fold + embargo ----------------------------------------------
@@ -72,11 +77,11 @@ def test_purged_kfold_no_train_test_overlap_and_embargo_gap():
     folds = purged_kfold(100, n_splits=5, embargo=3)
     assert len(folds) == 5
     for train, test in folds:
-        assert set(train).isdisjoint(test)              # no leakage
+        assert set(train).isdisjoint(test)  # no leakage
         lo, hi = min(test), max(test)
         for i in train:
-            assert not (hi < i <= hi + 3)               # right embargo enforced
-            assert not (lo - 3 <= i < lo)               # left embargo enforced
+            assert not (hi < i <= hi + 3)  # right embargo enforced
+            assert not (lo - 3 <= i < lo)  # left embargo enforced
 
 
 # --- block bootstrap -------------------------------------------------------
@@ -84,7 +89,7 @@ def test_block_bootstrap_preserves_length_and_is_deterministic():
     vals = list(range(50))
     a = block_bootstrap(vals, block_size=5, n_resamples=10, seed=1)
     b = block_bootstrap(vals, block_size=5, n_resamples=10, seed=1)
-    assert a == b                                       # seeded -> reproducible
+    assert a == b  # seeded -> reproducible
     assert all(len(s) == len(vals) for s in a)
 
 

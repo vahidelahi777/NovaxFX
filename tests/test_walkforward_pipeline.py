@@ -4,6 +4,7 @@ Strategy: LONG when close > EMA(5), FLAT otherwise.
 Bar series: monotone rising prices so the EMA always lags the close after
 warmup, guaranteeing at least one trade in the test segment.
 """
+
 from __future__ import annotations
 
 import math
@@ -37,6 +38,7 @@ _EXPECTED_METRIC_KEYS = frozenset(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_rising_bars(n: int, start: float = 1.1000, step: float = 0.0003) -> list[Bar]:
     """Monotone rising bars. close > EMA after period warmup -> generates LONG trades."""
@@ -72,10 +74,11 @@ class _EmaStrategy:
 # SimpleWalkForward unit tests
 # ---------------------------------------------------------------------------
 
+
 def test_split_sizes_match_ratio():
     bars = _make_rising_bars(30)
     train, test = SimpleWalkForward(train_ratio=0.7).split(bars)
-    assert len(train) == 21          # int(30 * 0.7)
+    assert len(train) == 21  # int(30 * 0.7)
     assert len(test) == 9
     assert len(train) + len(test) == 30
 
@@ -112,6 +115,7 @@ def test_split_too_few_bars_for_train():
 # compute_basic_metrics unit tests
 # ---------------------------------------------------------------------------
 
+
 def _run_on(bars: list[Bar]) -> object:
     engine = BacktestEngine(symbol=_SYMBOL, timeframe=_TF)
     return engine.run(bars, _EmaStrategy(5), _passing_report(bars))
@@ -130,9 +134,7 @@ def test_metrics_no_trades_returns_zeros():
         def on_bar(self, v: BarView, p: Position) -> Signal:
             return Signal.FLAT
 
-    result = BacktestEngine(symbol=_SYMBOL, timeframe=_TF).run(
-        bars, _Flat(), _passing_report(bars)
-    )
+    result = BacktestEngine(symbol=_SYMBOL, timeframe=_TF).run(bars, _Flat(), _passing_report(bars))
     m = compute_basic_metrics(result)
     assert m["trade_count"] == 0
     assert m["total_return"] == 0.0
@@ -194,6 +196,7 @@ def test_metrics_drawdown_pct_comparable_to_fractional_threshold():
 # ---------------------------------------------------------------------------
 # End-to-end pipeline tests
 # ---------------------------------------------------------------------------
+
 
 def test_pipeline_runs_end_to_end():
     bars = _make_rising_bars(40)

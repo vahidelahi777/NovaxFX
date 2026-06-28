@@ -5,6 +5,7 @@ run stamps: git commit, data hash, feature/code versions, config hash, seed,
 environment, dependency-lock hash, artifact path, and an immutable run id. Two
 runs with the same provenance must reproduce the same metrics.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -41,7 +42,8 @@ def sha256_obj(obj: object) -> str:
 def git_commit() -> str:
     try:
         out = subprocess.run(
-            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5, check=True)
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5, check=True
+        )
         return out.stdout.strip()
     except Exception:
         return "unknown"
@@ -67,9 +69,14 @@ class RunProvenance:
 
 
 def capture(
-    *, data_hash: str, config: Mapping[str, object], random_seed: int,
-    artifact_path: str | None = None, lockfile: Path | None = None,
-    feature_version: str = SETTINGS.feature_version, code_version: str = SETTINGS.code_version,
+    *,
+    data_hash: str,
+    config: Mapping[str, object],
+    random_seed: int,
+    artifact_path: str | None = None,
+    lockfile: Path | None = None,
+    feature_version: str = SETTINGS.feature_version,
+    code_version: str = SETTINGS.code_version,
     extra: Mapping[str, str] | None = None,
 ) -> RunProvenance:
     """Capture full provenance for a run. `data_hash` must come from the dataset used."""

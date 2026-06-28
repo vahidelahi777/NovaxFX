@@ -4,6 +4,7 @@ Phase 0.6 left a half-blind float guard. Here cost/risk APIs require `Pips`, so 
 raw float or a `PriceUnits` value is rejected (mypy at author time, isinstance at
 runtime). Wrong-unit ATR can no longer pass silently.
 """
+
 from __future__ import annotations
 
 import math
@@ -49,6 +50,9 @@ def require_pips(value: object, *, name: str = "atr") -> Pips:
     if isinstance(value, PriceUnits):
         raise TypeError(
             f"{name} was PriceUnits; convert with to_pips(instrument, value) — "
-            "passing price units as pips is the silent-error this type prevents.")
-    raise TypeError(f"{name} must be Pips, got {type(value).__name__} "
-                    "(raw floats are not accepted at this boundary)")
+            "passing price units as pips is the silent-error this type prevents."
+        )
+    raise TypeError(
+        f"{name} must be Pips, got {type(value).__name__} "
+        "(raw floats are not accepted at this boundary)"
+    )

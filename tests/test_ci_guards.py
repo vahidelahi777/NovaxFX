@@ -1,4 +1,5 @@
 """Run the static CI guards as part of the test suite."""
+
 import importlib.util
 import sys
 from pathlib import Path

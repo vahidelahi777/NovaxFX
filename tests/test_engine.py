@@ -12,6 +12,7 @@ Coverage:
   - Reversal: opposing signal flattens then opens new position
   - Feature causality: EMA and ATR satisfy assert_no_lookahead
 """
+
 from __future__ import annotations
 
 import math
@@ -62,7 +63,9 @@ def _passing_report(n: int = 10) -> DataQualityReport:
 
 def _failing_report() -> DataQualityReport:
     return DataQualityReport(
-        symbol=_SYMBOL, timeframe=_TF, n_bars=0,
+        symbol=_SYMBOL,
+        timeframe=_TF,
+        n_bars=0,
         checks=(CheckResult("forced", False, "forced failure", "high"),),
     )
 
@@ -74,6 +77,7 @@ def _engine() -> BacktestEngine:
 # ---------------------------------------------------------------------------
 # Simple strategy fixtures
 # ---------------------------------------------------------------------------
+
 
 class _AlwaysFlat:
     def on_bar(self, view: BarView, position: Position) -> Signal:
@@ -92,12 +96,14 @@ class _AlwaysShort:
 
 class _LongOnFirst:
     """Signal LONG once (bar 0), then FLAT."""
+
     def on_bar(self, view: BarView, position: Position) -> Signal:
         return Signal.LONG if len(view) == 1 else Signal.FLAT
 
 
 class _LongThenShort:
     """LONG on bar 0, SHORT on bar 1, FLAT thereafter."""
+
     def on_bar(self, view: BarView, position: Position) -> Signal:
         n = len(view)
         if n == 1:
@@ -109,6 +115,7 @@ class _LongThenShort:
 
 class _SignalOnLastBar:
     """Always FLAT except on the very last bar (requires knowing n)."""
+
     def __init__(self, n_bars: int) -> None:
         self._n = n_bars
 
@@ -118,6 +125,7 @@ class _SignalOnLastBar:
 
 class _ViewLengthRecorder:
     """Records view lengths and bar timestamps for the causal guarantee test."""
+
     def __init__(self) -> None:
         self.lengths: list[int] = []
         self.last_bar_indices: list[int] = []  # position in the bar sequence
@@ -131,6 +139,7 @@ class _ViewLengthRecorder:
 # ---------------------------------------------------------------------------
 # Causal guarantee: strategy never sees future bars
 # ---------------------------------------------------------------------------
+
 
 def test_view_lengths_are_strictly_increasing():
     n = 8
@@ -169,13 +178,14 @@ def test_view_bars_field_is_a_tuple():
 # Execution lag: fill at bars[i+1].open
 # ---------------------------------------------------------------------------
 
+
 def test_entry_fill_at_next_bar_open():
     """LONG signal on bar 0 → entry price == bars[1].open."""
     entry_price = 1.1050
     bars = [
         _bar(0, 1.1000),
-        _bar(1, entry_price),   # fill bar — entry at this bar's open
-        _bar(2, 1.1100),        # close bar (FLAT signal on bar 1)
+        _bar(1, entry_price),  # fill bar — entry at this bar's open
+        _bar(2, 1.1100),  # close bar (FLAT signal on bar 1)
     ]
     result = _engine().run(bars, _LongOnFirst(), _passing_report(3))
     assert len(result.trades) == 1
@@ -199,6 +209,7 @@ def test_exit_fill_at_next_bar_open():
 # Last-bar safety: signal on final bar must not generate an entry
 # ---------------------------------------------------------------------------
 
+
 def test_last_bar_long_signal_produces_no_trade():
     n = 4
     bars = _bar_range(n)
@@ -212,13 +223,17 @@ def test_last_bar_with_open_position_force_closes():
     close_price = 1.1200
     bars = [
         _bar(0, 1.1000),
-        _bar(1, 1.1050),          # fill bar: LONG entered here
+        _bar(1, 1.1050),  # fill bar: LONG entered here
         _bar(2, 1.1100),
-        _bar(3, close_price),     # last bar: force-close at this bar's close
+        _bar(3, close_price),  # last bar: force-close at this bar's close
     ]
     bars[3] = Bar(
-        ts=bars[3].ts, open=close_price, high=close_price + 0.001,
-        low=close_price - 0.001, close=close_price, source="test",
+        ts=bars[3].ts,
+        open=close_price,
+        high=close_price + 0.001,
+        low=close_price - 0.001,
+        close=close_price,
+        source="test",
     )
     result = _engine().run(bars, _AlwaysLong(), _passing_report(4))
     assert len(result.trades) == 1
@@ -229,29 +244,28 @@ def test_last_bar_with_open_position_force_closes():
 # Cost application
 # ---------------------------------------------------------------------------
 
+
 def _expected_round_trip_cost() -> float:
     """Manually compute DEFAULT_COST_MODEL cost for EUR/USD, 1 lot, no session."""
     inst = get_instrument(_SYMBOL)
-    return DEFAULT_COST_MODEL.round_trip_cost_currency(
-        inst, lots=1.0, atr=Pips(0.0), session=None
-    )
+    return DEFAULT_COST_MODEL.round_trip_cost_currency(inst, lots=1.0, atr=Pips(0.0), session=None)
 
 
 def test_profitable_trade_pnl_net_of_cost():
     """10 pips LONG gain minus round-trip cost."""
     entry_price = 1.10000
-    exit_price  = 1.10100   # +10 pips
+    exit_price = 1.10100  # +10 pips
     bars = [
         _bar(0, entry_price),
-        _bar(1, entry_price),   # entry at bars[1].open
-        _bar(2, exit_price),    # exit at bars[2].open (FLAT after bar 1)
+        _bar(1, entry_price),  # entry at bars[1].open
+        _bar(2, exit_price),  # exit at bars[2].open (FLAT after bar 1)
     ]
     result = _engine().run(bars, _LongOnFirst(), _passing_report(3))
     assert len(result.trades) == 1
 
     inst = get_instrument(_SYMBOL)
     pip_delta = (exit_price - entry_price) / inst.pip_size  # 10 pips
-    raw_pnl = pip_delta * inst.pip_value_per_lot            # 100.0 USD
+    raw_pnl = pip_delta * inst.pip_value_per_lot  # 100.0 USD
     cost = _expected_round_trip_cost()
     expected = raw_pnl - cost
     assert math.isclose(result.trades[0].pnl, expected, rel_tol=1e-9)
@@ -285,6 +299,7 @@ def test_equity_curve_is_cumulative_pnl():
 # Data-quality gate enforcement
 # ---------------------------------------------------------------------------
 
+
 def test_engine_raises_on_failing_report():
     bars = _bar_range(4)
     with pytest.raises(ValueError, match="data quality gate failed"):
@@ -315,6 +330,7 @@ def test_engine_raises_on_fewer_than_two_bars():
 # Position rules
 # ---------------------------------------------------------------------------
 
+
 def test_duplicate_long_signal_is_ignored():
     """Two consecutive LONG signals while already LONG → only one trade."""
     bars = _bar_range(5)
@@ -336,18 +352,18 @@ def test_reversal_long_to_short_produces_two_trades():
     # trade 0: LONG closed by SHORT signal
     # trade 1: SHORT closed by force-close at last bar
     assert len(result.trades) == 2
-    assert result.trades[0].entry_ts == bars[1].ts   # LONG entry at bars[1].open
-    assert result.trades[1].entry_ts == bars[2].ts   # SHORT entry at bars[2].open
+    assert result.trades[0].entry_ts == bars[1].ts  # LONG entry at bars[1].open
+    assert result.trades[1].entry_ts == bars[2].ts  # SHORT entry at bars[2].open
 
 
 def test_reversal_entry_and_close_use_same_fill_price():
     """Both legs of a reversal fill at the same bar's open."""
     bars = [
-        _bar(0, 1.1000),   # signal LONG
-        _bar(1, 1.1050),   # LONG entry here (open=1.1050)
-        _bar(2, 1.1080),   # signal SHORT: LONG exits at bars[2].open, SHORT enters
-        _bar(3, 1.1060),   # SHORT exits at bars[3].open (FLAT signal)
-        _bar(4, 1.1040),   # last bar
+        _bar(0, 1.1000),  # signal LONG
+        _bar(1, 1.1050),  # LONG entry here (open=1.1050)
+        _bar(2, 1.1080),  # signal SHORT: LONG exits at bars[2].open, SHORT enters
+        _bar(3, 1.1060),  # SHORT exits at bars[3].open (FLAT signal)
+        _bar(4, 1.1040),  # last bar
     ]
     result = _engine().run(bars, _LongThenShort(), _passing_report(5))
     assert len(result.trades) >= 2
@@ -367,12 +383,13 @@ def test_flat_strategy_produces_no_trades():
 # Short position PnL direction
 # ---------------------------------------------------------------------------
 
+
 def test_short_profit_on_price_decline():
     """SHORT entry above exit → profit after costs (sufficient move)."""
     bars = [
-        _bar(0, 1.1100),   # signal SHORT
-        _bar(1, 1.1100),   # SHORT entry at bars[1].open=1.1100
-        _bar(2, 1.1000),   # FLAT signal: SHORT exit at bars[2].open=1.1000
+        _bar(0, 1.1100),  # signal SHORT
+        _bar(1, 1.1100),  # SHORT entry at bars[1].open=1.1100
+        _bar(2, 1.1000),  # FLAT signal: SHORT exit at bars[2].open=1.1000
     ]
 
     class _ShortOnFirst:
@@ -389,8 +406,8 @@ def test_short_loss_on_price_rise():
     """SHORT entry below exit → loss."""
     bars = [
         _bar(0, 1.1000),
-        _bar(1, 1.1000),   # SHORT entry
-        _bar(2, 1.1100),   # exit at higher price
+        _bar(1, 1.1000),  # SHORT entry
+        _bar(2, 1.1100),  # exit at higher price
     ]
 
     class _ShortOnFirst:
@@ -405,6 +422,7 @@ def test_short_loss_on_price_rise():
 # ---------------------------------------------------------------------------
 # BacktestResult structure
 # ---------------------------------------------------------------------------
+
 
 def test_result_pnls_property_matches_trades():
     bars = _bar_range(5)
@@ -422,6 +440,7 @@ def test_result_is_immutable():
 # ---------------------------------------------------------------------------
 # Feature causality: EMA
 # ---------------------------------------------------------------------------
+
 
 def test_ema_length_matches_input():
     bars = _bar_range(10, step=0.0001)
@@ -472,6 +491,7 @@ def test_ema_period_equals_one_matches_close():
 # Feature causality: ATR
 # ---------------------------------------------------------------------------
 
+
 def test_atr_length_matches_input():
     bars = _bar_range(10)
     assert len(atr(bars, 3)) == 10
@@ -487,8 +507,23 @@ def test_atr_nans_before_period():
 
 def test_atr_no_lookahead():
     # Use varying prices so TR varies bar-to-bar.
-    prices = [1.1000, 1.1020, 1.0990, 1.1050, 1.1010, 1.0980, 1.1060, 1.1030,
-              1.1000, 1.1040, 1.1015, 1.0970, 1.1055, 1.1025, 1.0995]
+    prices = [
+        1.1000,
+        1.1020,
+        1.0990,
+        1.1050,
+        1.1010,
+        1.0980,
+        1.1060,
+        1.1030,
+        1.1000,
+        1.1040,
+        1.1015,
+        1.0970,
+        1.1055,
+        1.1025,
+        1.0995,
+    ]
     bars = [_bar(i, p, spread=0.0010) for i, p in enumerate(prices)]
     bad = find_lookahead_indices(lambda b: atr(b, 5), bars)
     assert bad == [], f"ATR lookahead detected at indices {bad}"
@@ -505,11 +540,13 @@ def test_atr_seed_equals_average_tr():
     trs = [bars[0].high - bars[0].low]
     for i in range(1, period):
         prev_c = bars[i - 1].close
-        trs.append(max(
-            bars[i].high - bars[i].low,
-            abs(bars[i].high - prev_c),
-            abs(bars[i].low - prev_c),
-        ))
+        trs.append(
+            max(
+                bars[i].high - bars[i].low,
+                abs(bars[i].high - prev_c),
+                abs(bars[i].low - prev_c),
+            )
+        )
     expected = sum(trs) / period
     assert math.isclose(result[period - 1], expected, rel_tol=1e-12)
 
@@ -535,6 +572,7 @@ def test_atr_non_negative():
 # ---------------------------------------------------------------------------
 # assert_no_lookahead integration (existing harness)
 # ---------------------------------------------------------------------------
+
 
 def test_assert_no_lookahead_passes_ema():
     bars = [_bar(i, 1.1000 + i * 0.0002) for i in range(15)]

@@ -5,6 +5,7 @@ docs/phase-0/data-source-decision.md). The provider classes here exist only to
 mark the integration seam; they raise NotImplementedError so nothing accidentally
 depends on a service in Phase 0.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -59,9 +60,7 @@ class DataSource(Protocol):
 
     name: str
 
-    def get_bars(
-        self, symbol: str, timeframe: str, start: datetime, end: datetime
-    ) -> list[Bar]:
+    def get_bars(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> list[Bar]:
         """Return bars with ts in [start, end), ascending. Inputs must be UTC-aware."""
         ...
 
@@ -77,9 +76,7 @@ class InMemoryDataSource:
         ordered = sorted(bars, key=lambda b: b.ts)
         self._bars[(symbol, timeframe)] = ordered
 
-    def get_bars(
-        self, symbol: str, timeframe: str, start: datetime, end: datetime
-    ) -> list[Bar]:
+    def get_bars(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> list[Bar]:
         for label, dt in (("start", start), ("end", end)):
             if dt.tzinfo is None:
                 raise ValueError(f"{label} must be tz-aware UTC")
@@ -92,9 +89,7 @@ class _DeferredProvider:
 
     name = "deferred"
 
-    def get_bars(
-        self, symbol: str, timeframe: str, start: datetime, end: datetime
-    ) -> list[Bar]:
+    def get_bars(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> list[Bar]:
         raise NotImplementedError(
             f"{type(self).__name__} is deferred in Phase 0 — no external services. "
             "See docs/phase-0/data-source-decision.md."

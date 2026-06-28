@@ -6,6 +6,7 @@ fails if any in-sample value disagrees with the value computable using only data
 up to that point. This is the single most important test class for a research
 platform — lookahead is the likeliest cause of a fake FX edge.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -21,7 +22,10 @@ class FeatureFn[T](Protocol):
 
 
 def find_lookahead_indices[T](
-    feature_fn: FeatureFn[T], data: Sequence[T], *, check_indices: Sequence[int] | None = None,
+    feature_fn: FeatureFn[T],
+    data: Sequence[T],
+    *,
+    check_indices: Sequence[int] | None = None,
     tol: float = 1e-12,
 ) -> list[int]:
     """Return indices where the feature peeks into the future.
@@ -41,7 +45,7 @@ def find_lookahead_indices[T](
             raise ValueError("feature_fn must return one value per input row (truncated)")
         a, b = full[i], truncated[i]
         # NaN-safe-ish comparison
-        if (a != a and b != b):  # both NaN
+        if a != a and b != b:  # both NaN
             continue
         if abs(a - b) > tol:
             bad.append(i)
@@ -49,7 +53,10 @@ def find_lookahead_indices[T](
 
 
 def assert_no_lookahead[T](
-    feature_fn: FeatureFn[T], data: Sequence[T], *, check_indices: Sequence[int] | None = None,
+    feature_fn: FeatureFn[T],
+    data: Sequence[T],
+    *,
+    check_indices: Sequence[int] | None = None,
     tol: float = 1e-12,
 ) -> None:
     bad = find_lookahead_indices(feature_fn, data, check_indices=check_indices, tol=tol)

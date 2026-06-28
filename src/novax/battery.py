@@ -10,6 +10,7 @@ validation artifact that is not tied to a logged trial.
 Determinism: all stochastic steps take an explicit seed. UTC only (delegated to the
 artifact layer and the market calendar).
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -38,11 +39,11 @@ class BatteryInputs:
     """
 
     pnls: Sequence[float]
-    delayed_pnls: Sequence[float] | None = None      # same trades, +1 bar execution
-    stressed_pnls: Sequence[float] | None = None     # PnL recomputed at 1.5x costs
+    delayed_pnls: Sequence[float] | None = None  # same trades, +1 bar execution
+    stressed_pnls: Sequence[float] | None = None  # PnL recomputed at 1.5x costs
     window_pnls: Sequence[Sequence[float]] | None = None  # per walk-forward window
-    no_lookahead_passed: bool = True                 # from NoLookaheadValidator
-    bars: Sequence[Bar] | None = None                # for data quality
+    no_lookahead_passed: bool = True  # from NoLookaheadValidator
+    bars: Sequence[Bar] | None = None  # for data quality
     symbol: str = ""
     timeframe: str = ""
 
@@ -66,14 +67,16 @@ class ValidationBatteryRunner:
 
         # --- RANDOMIZED_ENTRY: null distribution of mean PnL under resampled entries
         null = self._null_distribution(pnls)
-        ev.emit(ArtifactType.RANDOMIZED_ENTRY,
-                {"null_distribution": null, "observed_stat": _mean(pnls)})
+        ev.emit(
+            ArtifactType.RANDOMIZED_ENTRY, {"null_distribution": null, "observed_stat": _mean(pnls)}
+        )
 
         # --- ONE_BAR_DELAY: edge under +1-bar execution
         delayed = list(inputs.delayed_pnls) if inputs.delayed_pnls is not None else pnls
-        ev.emit(ArtifactType.ONE_BAR_DELAY,
-                {"base_expectancy": expectancy(pnls),
-                 "delayed_expectancy": expectancy(delayed)})
+        ev.emit(
+            ArtifactType.ONE_BAR_DELAY,
+            {"base_expectancy": expectancy(pnls), "delayed_expectancy": expectancy(delayed)},
+        )
 
         # --- COST_STRESS: expectancy when costs are scaled to 1.5x
         stressed = list(inputs.stressed_pnls) if inputs.stressed_pnls is not None else pnls
@@ -81,8 +84,10 @@ class ValidationBatteryRunner:
 
         # --- WALK_FORWARD: per-window expectancies (out-of-sample windows)
         windows = inputs.window_pnls if inputs.window_pnls is not None else [pnls]
-        ev.emit(ArtifactType.WALK_FORWARD,
-                {"window_expectancies": [expectancy(list(w)) for w in windows]})
+        ev.emit(
+            ArtifactType.WALK_FORWARD,
+            {"window_expectancies": [expectancy(list(w)) for w in windows]},
+        )
 
         # --- MONTE_CARLO_DD: block-bootstrap drawdown distribution (preserves
         #     local autocorrelation of trade PnL — i.i.d. shuffle would understate DD)
@@ -102,15 +107,18 @@ class ValidationBatteryRunner:
         """Mean PnL across block-bootstrap resamples — a harness proxy for the
         randomized-entry null. Deterministic given seed."""
         resamples = block_bootstrap(
-            pnls, block_size=_block_size(len(pnls)),
-            n_resamples=self.n_bootstrap, seed=self.seed)
+            pnls, block_size=_block_size(len(pnls)), n_resamples=self.n_bootstrap, seed=self.seed
+        )
         return [_mean(r) for r in resamples]
 
     def _mc_drawdowns(self, pnls: Sequence[float]) -> list[float]:
         base = abs(sum(abs(p) for p in pnls)) or 1.0
         resamples = block_bootstrap(
-            pnls, block_size=_block_size(len(pnls)),
-            n_resamples=self.n_bootstrap, seed=self.seed + 10_000)
+            pnls,
+            block_size=_block_size(len(pnls)),
+            n_resamples=self.n_bootstrap,
+            seed=self.seed + 10_000,
+        )
         return [max_drawdown(r) / base for r in resamples]
 
 
@@ -122,8 +130,9 @@ class DataQualityGateRunner:
     mandatory for any gate-eligible run.
     """
 
-    def run(self, ev: Evaluation, *, symbol: str, timeframe: str,
-            bars: Sequence[Bar]) -> DataQualityReport:
+    def run(
+        self, ev: Evaluation, *, symbol: str, timeframe: str, bars: Sequence[Bar]
+    ) -> DataQualityReport:
         report = run_data_quality(symbol, timeframe, list(bars))
         ev.emit(ArtifactType.DATA_QUALITY, _dq_payload(report))
         return report
@@ -142,4 +151,4 @@ def _mean(xs: Sequence[float]) -> float:
 
 
 def _block_size(n: int) -> int:
-    return max(1, min(n, int(round(n ** 0.5))))
+    return max(1, min(n, int(round(n**0.5))))

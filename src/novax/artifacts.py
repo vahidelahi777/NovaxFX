@@ -7,6 +7,7 @@ Enforcement rules:
     seed) and a content hash; mismatches are detectable by the gate.
   * Registration is append-only; duplicate (run_id, artifact_type) is rejected.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -80,21 +81,32 @@ class ArtifactRegistry:
         self._known_trial_ids.add(trial_id)
 
     def register(
-        self, *, run_id: str, trial_id: str, campaign_id: str, artifact_type: ArtifactType,
-        provenance: dict[str, object], payload: dict[str, object],
-        parent_ids: tuple[str, ...] = (), file_path: str | None = None,
+        self,
+        *,
+        run_id: str,
+        trial_id: str,
+        campaign_id: str,
+        artifact_type: ArtifactType,
+        provenance: dict[str, object],
+        payload: dict[str, object],
+        parent_ids: tuple[str, ...] = (),
+        file_path: str | None = None,
     ) -> Artifact:
         if trial_id not in self._known_trial_ids:
             raise ValueError(
                 f"refusing to register artifact for unknown trial_id={trial_id!r}: "
-                "no artifact without a logged trial.")
+                "no artifact without a logged trial."
+            )
         key = (run_id, str(artifact_type))
         if key in self._seen:
             raise ValueError(f"duplicate artifact for run_id={run_id} type={artifact_type}")
         self._seen.add(key)
         art = Artifact(
-            artifact_id=uuid.uuid4().hex, run_id=run_id, trial_id=trial_id,
-            campaign_id=campaign_id, artifact_type=artifact_type,
+            artifact_id=uuid.uuid4().hex,
+            run_id=run_id,
+            trial_id=trial_id,
+            campaign_id=campaign_id,
+            artifact_type=artifact_type,
             created_at=datetime.now(UTC),
             git_commit=str(provenance.get("git_commit", "unknown")),
             config_hash=str(provenance.get("config_hash", "")),
@@ -107,7 +119,9 @@ class ArtifactRegistry:
             environment_hash=str(provenance.get("environment_hash", "")),
             dependency_lock_hash=str(provenance.get("dependency_lock_hash", "")),
             content_hash=sha256_obj(payload),
-            payload=dict(payload), parent_ids=tuple(parent_ids), file_path=file_path,
+            payload=dict(payload),
+            parent_ids=tuple(parent_ids),
+            file_path=file_path,
         )
         self._by_id[art.artifact_id] = art
         return art

@@ -1,4 +1,5 @@
 """Tests for the remaining Phase 0.6 fixes."""
+
 from datetime import UTC, datetime
 
 import pytest
@@ -50,11 +51,20 @@ def test_holiday_closes_market():
 # --- HIGH #8 support / Critical: trial registry feeds DSR ------------------
 def _trial(sh: float, seed: int) -> Trial:
     return Trial(
-        strategy="orb", instrument="EUR/USD", timeframe="5m", session="NEWYORK",
-        params={"window": 30}, feature_version="0.0.0", data_version="hashX",
-        cost_model_version="0.0.1", validation_split="wf1",
-        run_timestamp=datetime(2025, 1, 1, tzinfo=UTC), git_commit="abc",
-        random_seed=seed, observed_sharpe=sh)
+        strategy="orb",
+        instrument="EUR/USD",
+        timeframe="5m",
+        session="NEWYORK",
+        params={"window": 30},
+        feature_version="0.0.0",
+        data_version="hashX",
+        cost_model_version="0.0.1",
+        validation_split="wf1",
+        run_timestamp=datetime(2025, 1, 1, tzinfo=UTC),
+        git_commit="abc",
+        random_seed=seed,
+        observed_sharpe=sh,
+    )
 
 
 def test_registry_counts_and_dsr_uses_them():
@@ -63,8 +73,8 @@ def test_registry_counts_and_dsr_uses_them():
         reg.log(_trial(sh, i))
     assert reg.n_trials("orb", "EUR/USD", "5m") == 5
     res = reg.deflated_sharpe_for(
-        strategy="orb", instrument="EUR/USD", timeframe="5m",
-        observed_sr=0.25, n_obs=300)
+        strategy="orb", instrument="EUR/USD", timeframe="5m", observed_sr=0.25, n_obs=300
+    )
     assert res.n_trials == 5
     assert res.sr_variance > 0  # came from the registry, not a guess
 
@@ -106,14 +116,25 @@ def test_no_lookahead_catches_leaky_feature():
 
 # --- HIGH #7 / data quality gate -------------------------------------------
 def _bar(ts, spread=0.0001):
-    return Bar(ts=ts, open=1.10, high=1.11, low=1.09, close=1.10,
-               bid=1.0999, ask=1.0999 + spread, spread=spread, source="test")
+    return Bar(
+        ts=ts,
+        open=1.10,
+        high=1.11,
+        low=1.09,
+        close=1.10,
+        bid=1.0999,
+        ask=1.0999 + spread,
+        spread=spread,
+        source="test",
+    )
 
 
 def test_data_quality_flags_weekend_contamination():
     # A Saturday bar must be flagged as closed-market data.
-    bars = [_bar(datetime(2025, 1, 15, 14, 0, tzinfo=UTC)),
-            _bar(datetime(2025, 1, 18, 14, 0, tzinfo=UTC))]  # Saturday
+    bars = [
+        _bar(datetime(2025, 1, 15, 14, 0, tzinfo=UTC)),
+        _bar(datetime(2025, 1, 18, 14, 0, tzinfo=UTC)),
+    ]  # Saturday
     rep = run_data_quality("EUR/USD", "1h", bars)
     names = {c.name: c.passed for c in rep.checks}
     assert names["no_closed_market_data"] is False

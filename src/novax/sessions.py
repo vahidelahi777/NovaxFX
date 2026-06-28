@@ -13,6 +13,7 @@ These session boundaries are a documented, configurable convention — not a law
 nature. What must be correct is the *conversion*, not the exact local hours. Adjust
 START/END per your data vendor's convention; the correctness tests still hold.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -35,10 +36,11 @@ __all__ = [
 @dataclass(frozen=True)
 class SessionWindow:
     """A trading session defined in LOCAL exchange time. end is exclusive."""
+
     name: str
-    tz: str           # IANA tz name, e.g. "Europe/London"
-    start: time       # local start (inclusive)
-    end: time         # local end (exclusive)
+    tz: str  # IANA tz name, e.g. "Europe/London"
+    start: time  # local start (inclusive)
+    end: time  # local end (exclusive)
 
     def __post_init__(self) -> None:
         if self.start >= self.end:

@@ -4,6 +4,7 @@ silent backtest bugs (DST, London/NY mismatch weeks, naive datetimes).
 
 Run:  pytest -q libs/data/test_sessions.py
 """
+
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
@@ -69,7 +70,7 @@ def test_is_in_overlap_matches_bounds():
     s, e = overlap_bounds_utc(d)
     assert is_in_overlap(s)
     assert is_in_overlap(s + timedelta(minutes=30))
-    assert not is_in_overlap(e)            # end is exclusive
+    assert not is_in_overlap(e)  # end is exclusive
     assert not is_in_overlap(s - timedelta(minutes=1))
 
 
@@ -81,7 +82,7 @@ def test_active_sessions_during_overlap():
 
 
 def test_asia_membership_boundary():
-    assert is_in_session("ASIA", datetime(2025, 1, 15, 0, 0, tzinfo=UTC))      # inclusive start
+    assert is_in_session("ASIA", datetime(2025, 1, 15, 0, 0, tzinfo=UTC))  # inclusive start
     assert not is_in_session("ASIA", datetime(2025, 1, 15, 9, 0, tzinfo=UTC))  # exclusive end
 
 
@@ -94,6 +95,7 @@ def test_naive_datetime_rejected():
 # --- Non-UTC aware input is normalized, not mishandled ----------------------
 def test_non_utc_aware_input_is_normalized():
     from zoneinfo import ZoneInfo
+
     # 14:00 UTC expressed in NY time is still inside the winter overlap.
     dt_ny = datetime(2025, 1, 15, 9, 0, tzinfo=ZoneInfo("America/New_York"))  # =14:00 UTC
     assert is_in_overlap(dt_ny)
@@ -105,4 +107,4 @@ def test_market_closed_saturday():
 
 
 def test_market_open_midweek():
-    assert is_fx_market_open(datetime(2025, 1, 15, 12, 0, tzinfo=UTC))      # Wed
+    assert is_fx_market_open(datetime(2025, 1, 15, 12, 0, tzinfo=UTC))  # Wed

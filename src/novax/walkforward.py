@@ -17,6 +17,7 @@ and 12 test bars this wastes ~33 % of the test segment. Consider
 passing a longer test window or pre-seeding indicators on the tail of
 the train set if this matters for your experiment.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -41,11 +42,7 @@ class SimpleWalkForward:
         n = len(bars)
         idx = int(n * self.train_ratio)
         if idx < 1:
-            raise ValueError(
-                f"train_ratio {self.train_ratio} yields empty train set (n={n})"
-            )
+            raise ValueError(f"train_ratio {self.train_ratio} yields empty train set (n={n})")
         if idx >= n:
-            raise ValueError(
-                f"train_ratio {self.train_ratio} yields empty test set (n={n})"
-            )
+            raise ValueError(f"train_ratio {self.train_ratio} yields empty test set (n={n})")
         return list(bars[:idx]), list(bars[idx:])

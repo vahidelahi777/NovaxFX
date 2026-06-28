@@ -8,6 +8,7 @@ pip_value_per_lot values are NOMINAL placeholders for Phase 0 PnL sketches; they
 are not live-accurate (USD/JPY pip value floats with the rate). Calibrate before
 using PnL in any decision.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,11 +22,11 @@ class AssetClass(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Instrument:
-    symbol: str             # canonical, e.g. "EUR/USD"
-    oanda_symbol: str       # e.g. "EUR_USD"
+    symbol: str  # canonical, e.g. "EUR/USD"
+    oanda_symbol: str  # e.g. "EUR_USD"
     asset_class: AssetClass
-    pip_size: float         # price increment of one pip
-    price_precision: int    # decimal places to round prices
+    pip_size: float  # price increment of one pip
+    price_precision: int  # decimal places to round prices
     pip_value_per_lot: float  # NOMINAL USD per pip per standard lot (placeholder)
     best_sessions: tuple[str, ...]
 
@@ -38,23 +39,39 @@ class Instrument:
 
 INSTRUMENTS: dict[str, Instrument] = {
     "EUR/USD": Instrument(
-        symbol="EUR/USD", oanda_symbol="EUR_USD", asset_class=AssetClass.FX_MAJOR,
-        pip_size=0.0001, price_precision=5, pip_value_per_lot=10.0,
+        symbol="EUR/USD",
+        oanda_symbol="EUR_USD",
+        asset_class=AssetClass.FX_MAJOR,
+        pip_size=0.0001,
+        price_precision=5,
+        pip_value_per_lot=10.0,
         best_sessions=("LONDON", "NEWYORK", "OVERLAP"),
     ),
     "GBP/USD": Instrument(
-        symbol="GBP/USD", oanda_symbol="GBP_USD", asset_class=AssetClass.FX_MAJOR,
-        pip_size=0.0001, price_precision=5, pip_value_per_lot=10.0,
+        symbol="GBP/USD",
+        oanda_symbol="GBP_USD",
+        asset_class=AssetClass.FX_MAJOR,
+        pip_size=0.0001,
+        price_precision=5,
+        pip_value_per_lot=10.0,
         best_sessions=("LONDON", "OVERLAP"),
     ),
     "USD/JPY": Instrument(
-        symbol="USD/JPY", oanda_symbol="USD_JPY", asset_class=AssetClass.FX_MAJOR,
-        pip_size=0.01, price_precision=3, pip_value_per_lot=9.0,  # nominal
+        symbol="USD/JPY",
+        oanda_symbol="USD_JPY",
+        asset_class=AssetClass.FX_MAJOR,
+        pip_size=0.01,
+        price_precision=3,
+        pip_value_per_lot=9.0,  # nominal
         best_sessions=("ASIA", "NEWYORK"),
     ),
     "XAU/USD": Instrument(
-        symbol="XAU/USD", oanda_symbol="XAU_USD", asset_class=AssetClass.METAL,
-        pip_size=0.1, price_precision=2, pip_value_per_lot=10.0,  # nominal (100oz)
+        symbol="XAU/USD",
+        oanda_symbol="XAU_USD",
+        asset_class=AssetClass.METAL,
+        pip_size=0.1,
+        price_precision=2,
+        pip_value_per_lot=10.0,  # nominal (100oz)
         best_sessions=("LONDON", "NEWYORK", "OVERLAP"),
     ),
 }

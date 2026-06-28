@@ -10,6 +10,7 @@ must handle NaN explicitly (e.g. skip bars until history is warm).
 Functions operate on Sequence[Bar] and return list[float] of the same length,
 making them compatible with novax.lookahead.find_lookahead_indices.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence

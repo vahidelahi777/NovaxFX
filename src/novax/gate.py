@@ -17,6 +17,7 @@ cost_model_version), and COMPUTES every criterion from artifact payloads:
 
 Missing, stale, or provenance-mismatched artifacts -> NO_GO. There is no override.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -68,7 +69,6 @@ def _flag(payload: dict[str, object], key: str) -> bool:
     return bool(payload.get(key, False))
 
 
-
 @dataclass(frozen=True, slots=True)
 class GateDecision:
     passed: bool
@@ -85,8 +85,12 @@ def _provenance_tuple(a: Artifact) -> tuple[str, str, str]:
 
 
 def evaluate_gate(
-    *, campaign_id: str, strategy: str, run_id: str,
-    artifacts: ArtifactRegistry, registry: TrialRegistry,
+    *,
+    campaign_id: str,
+    strategy: str,
+    run_id: str,
+    artifacts: ArtifactRegistry,
+    registry: TrialRegistry,
     settings: Settings = SETTINGS,
 ) -> GateDecision:
     failed: list[str] = []
@@ -143,12 +147,14 @@ def evaluate_gate(
     # DSR from CAMPAIGN trial count + ledger Sharpe
     obs_sr = sharpe(pnls)
     dsr = registry.deflated_sharpe_for_campaign(
-        campaign_id=campaign_id, strategy=strategy, observed_sr=obs_sr, n_obs=max(n_trades, 2))
+        campaign_id=campaign_id, strategy=strategy, observed_sr=obs_sr, n_obs=max(n_trades, 2)
+    )
     computed["deflated_sharpe"] = dsr.probability
     if not dsr.passed(settings.min_deflated_sharpe_probability):
         failed.append(
             f"deflated_sharpe {dsr.probability:.3f} <= {settings.min_deflated_sharpe_probability} "
-            f"(campaign n_trials={dsr.n_trials})")
+            f"(campaign n_trials={dsr.n_trials})"
+        )
 
     # walk-forward pass rate counted from per-window results
     wf = arts[ArtifactType.WALK_FORWARD].payload
@@ -157,8 +163,8 @@ def evaluate_gate(
     computed["wf_pass_rate"] = wf_rate
     if wf_rate < settings.min_walk_forward_window_pass_rate:
         failed.append(
-            f"walk-forward {wf_rate:.0%} < "
-            f"{settings.min_walk_forward_window_pass_rate:.0%}")
+            f"walk-forward {wf_rate:.0%} < {settings.min_walk_forward_window_pass_rate:.0%}"
+        )
 
     # randomized-entry: observed stat must beat the null percentile
     re = arts[ArtifactType.RANDOMIZED_ENTRY].payload
@@ -167,9 +173,7 @@ def evaluate_gate(
     rank = percentile_rank(observed, null) if null else 0.0
     computed["randomized_entry_rank"] = rank
     if rank < settings.randomized_entry_percentile:
-        failed.append(
-            f"randomized-entry rank {rank:.2f} < "
-            f"{settings.randomized_entry_percentile}")
+        failed.append(f"randomized-entry rank {rank:.2f} < {settings.randomized_entry_percentile}")
 
     # one-bar-delay: edge must survive
     obd = arts[ArtifactType.ONE_BAR_DELAY].payload

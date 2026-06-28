@@ -9,6 +9,7 @@ peak-to-trough on the per-trade equity curve, mirroring the formula used
 in gate.py. Always use max_drawdown_pct when comparing against a fractional
 threshold (e.g. SETTINGS.max_drawdown_pct = 0.20).
 """
+
 from __future__ import annotations
 
 import math
@@ -17,15 +18,17 @@ from .engine import BacktestResult
 
 __all__ = ["compute_basic_metrics"]
 
-_REQUIRED_KEYS = frozenset({
-    "total_return",
-    "max_drawdown_abs",
-    "max_drawdown_pct",
-    "sharpe_ratio",
-    "trade_count",
-    "win_rate",
-    "avg_trade_pnl",
-})
+_REQUIRED_KEYS = frozenset(
+    {
+        "total_return",
+        "max_drawdown_abs",
+        "max_drawdown_pct",
+        "sharpe_ratio",
+        "trade_count",
+        "win_rate",
+        "avg_trade_pnl",
+    }
+)
 
 
 def compute_basic_metrics(result: BacktestResult) -> dict[str, float]:
@@ -45,7 +48,7 @@ def compute_basic_metrics(result: BacktestResult) -> dict[str, float]:
 
     All values are 0.0 / 0 when there are no trades.
     """
-    pnls = result.pnls          # list[float]
+    pnls = result.pnls  # list[float]
     equity = list(result.equity)  # list[float] — cumulative PnL per trade
 
     n = len(pnls)

@@ -9,6 +9,7 @@ docs/phase-0/cost-model-spec.md — re-calibrate against realized feed spreads
 before trusting any result. XAU/USD has a distinct profile; FX assumptions are
 never reused for gold.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -35,11 +36,15 @@ class CostProfile:
     spread_floor_pips: float
     commission_per_side_per_lot: float  # currency units per standard lot
     slippage_fixed_pips: float
-    slippage_atr_k: float               # extra slippage = k * ATR(pips)
+    slippage_atr_k: float  # extra slippage = k * ATR(pips)
 
     def __post_init__(self) -> None:
-        for name in ("spread_floor_pips", "slippage_fixed_pips", "slippage_atr_k",
-                     "commission_per_side_per_lot"):
+        for name in (
+            "spread_floor_pips",
+            "slippage_fixed_pips",
+            "slippage_atr_k",
+            "commission_per_side_per_lot",
+        ):
             if getattr(self, name) < 0:
                 raise ValueError(f"CostProfile.{name} must be >= 0")
 
@@ -92,8 +97,12 @@ class CostModel:
         return self.session_multipliers.get(session, 1.0)
 
     def spread_cost_pips(
-        self, symbol: str, *, realized_spread_pips: float | None = None,
-        session: str | None = None, news: bool = False,
+        self,
+        symbol: str,
+        *,
+        realized_spread_pips: float | None = None,
+        session: str | None = None,
+        news: bool = False,
     ) -> float:
         """Effective spread (pips) paid once per round trip (enter ask, exit bid).
 
@@ -106,8 +115,13 @@ class CostModel:
         return base * self._session_mult(session) * news_mult * self.stress_factor
 
     def slippage_pips(
-        self, symbol: str, *, atr: Pips = _ZERO_PIPS, is_stop: bool = False,
-        session: str | None = None, news: bool = False,
+        self,
+        symbol: str,
+        *,
+        atr: Pips = _ZERO_PIPS,
+        is_stop: bool = False,
+        session: str | None = None,
+        news: bool = False,
     ) -> float:
         """Slippage (pips) for a single fill. Stops assume extra adverse slippage.
 
@@ -122,23 +136,34 @@ class CostModel:
         return per_fill * self._session_mult(session) * news_mult * self.stress_factor
 
     def round_trip_cost_pips(
-        self, symbol: str, *, atr: Pips = _ZERO_PIPS, session: str | None = None,
-        realized_spread_pips: float | None = None, exit_on_stop: bool = False,
+        self,
+        symbol: str,
+        *,
+        atr: Pips = _ZERO_PIPS,
+        session: str | None = None,
+        realized_spread_pips: float | None = None,
+        exit_on_stop: bool = False,
         news: bool = False,
     ) -> float:
         """Total round-trip cost in pips: spread (once) + entry + exit slippage."""
         atr = require_pips(atr)
         spread = self.spread_cost_pips(
-            symbol, realized_spread_pips=realized_spread_pips, session=session, news=news)
-        entry = self.slippage_pips(
-            symbol, atr=atr, is_stop=False, session=session, news=news)
+            symbol, realized_spread_pips=realized_spread_pips, session=session, news=news
+        )
+        entry = self.slippage_pips(symbol, atr=atr, is_stop=False, session=session, news=news)
         exit_ = self.slippage_pips(
-            symbol, atr=atr, is_stop=exit_on_stop, session=session, news=news)
+            symbol, atr=atr, is_stop=exit_on_stop, session=session, news=news
+        )
         return spread + entry + exit_
 
     def round_trip_cost_currency(
-        self, instrument: Instrument | str, *, lots: float = 1.0, atr: Pips = _ZERO_PIPS,
-        session: str | None = None, realized_spread_pips: float | None = None,
+        self,
+        instrument: Instrument | str,
+        *,
+        lots: float = 1.0,
+        atr: Pips = _ZERO_PIPS,
+        session: str | None = None,
+        realized_spread_pips: float | None = None,
         exit_on_stop: bool = False,
     ) -> float:
         """Round-trip cost in account currency for `lots` standard lots.
@@ -150,8 +175,11 @@ class CostModel:
         inst = instrument if isinstance(instrument, Instrument) else get_instrument(instrument)
         p = self._profile(inst.symbol)
         pip_cost = self.round_trip_cost_pips(
-            inst.symbol, atr=atr, session=session,
-            realized_spread_pips=realized_spread_pips, exit_on_stop=exit_on_stop,
+            inst.symbol,
+            atr=atr,
+            session=session,
+            realized_spread_pips=realized_spread_pips,
+            exit_on_stop=exit_on_stop,
         )
         spread_slip = pip_cost * inst.pip_value_per_lot * lots
         # Commission is a FIXED broker fee — it must NOT scale with the execution
@@ -161,5 +189,3 @@ class CostModel:
 
 
 DEFAULT_COST_MODEL = CostModel()
-
-

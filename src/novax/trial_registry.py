@@ -10,6 +10,7 @@ from here. Phase 0.7 adds:
 
 Append-only, JSONL-backed.
 """
+
 from __future__ import annotations
 
 import json
@@ -117,8 +118,15 @@ class TrialRegistry:
         return [t.observed_sharpe for t in self.family(strategy, instrument, timeframe)]
 
     def deflated_sharpe_for(
-        self, *, strategy: str, instrument: str, timeframe: str,
-        observed_sr: float, n_obs: int, skew: float = 0.0, kurtosis: float | None = None,
+        self,
+        *,
+        strategy: str,
+        instrument: str,
+        timeframe: str,
+        observed_sr: float,
+        n_obs: int,
+        skew: float = 0.0,
+        kurtosis: float | None = None,
     ) -> DeflatedSharpeResult:
         """Narrow-family DSR (single instrument/timeframe). Prefer the campaign
         variant for go/no-go, which also counts instrument/timeframe selection."""
@@ -129,10 +137,16 @@ class TrialRegistry:
         kwargs: dict[str, float] = {} if kurtosis is None else {"kurtosis": kurtosis}
         if n_trials == 1:
             return deflated_sharpe_ratio(
-                observed_sr, n_obs=n_obs, n_trials=1, sr_variance=0.0, skew=skew, **kwargs)
+                observed_sr, n_obs=n_obs, n_trials=1, sr_variance=0.0, skew=skew, **kwargs
+            )
         return deflated_sharpe_ratio(
-            observed_sr, n_obs=n_obs, n_trials=n_trials,
-            sr_variance=estimate_sr_variance(sh), skew=skew, **kwargs)
+            observed_sr,
+            n_obs=n_obs,
+            n_trials=n_trials,
+            sr_variance=estimate_sr_variance(sh),
+            skew=skew,
+            **kwargs,
+        )
 
     # --- campaign family (campaign_id, strategy) across instruments/timeframes/sessions ---
     def campaign(self, campaign_id: str, strategy: str) -> list[Trial]:
@@ -146,8 +160,14 @@ class TrialRegistry:
         return [t.observed_sharpe for t in self.campaign(campaign_id, strategy)]
 
     def deflated_sharpe_for_campaign(
-        self, *, campaign_id: str, strategy: str, observed_sr: float, n_obs: int,
-        skew: float = 0.0, kurtosis: float | None = None,
+        self,
+        *,
+        campaign_id: str,
+        strategy: str,
+        observed_sr: float,
+        n_obs: int,
+        skew: float = 0.0,
+        kurtosis: float | None = None,
     ) -> DeflatedSharpeResult:
         """DSR penalized by the FULL campaign trial count (counts instrument/tf/session selection).
 
@@ -161,14 +181,23 @@ class TrialRegistry:
         kwargs: dict[str, float] = {} if kurtosis is None else {"kurtosis": kurtosis}
         if n_trials == 1:
             return deflated_sharpe_ratio(
-                observed_sr, n_obs=n_obs, n_trials=1, sr_variance=0.0, skew=skew, **kwargs)
+                observed_sr, n_obs=n_obs, n_trials=1, sr_variance=0.0, skew=skew, **kwargs
+            )
         result = deflated_sharpe_ratio(
-            observed_sr, n_obs=n_obs, n_trials=n_trials,
-            sr_variance=estimate_sr_variance(sh), skew=skew, **kwargs)
+            observed_sr,
+            n_obs=n_obs,
+            n_trials=n_trials,
+            sr_variance=estimate_sr_variance(sh),
+            skew=skew,
+            **kwargs,
+        )
         # Low-variance gaming warning (near-identical trials shrink the penalty).
         if _suspiciously_low_variance(sh):
-            result = _with_warning(result, "trial-family Sharpe variance suspiciously low "
-                                           "(possible DSR gaming by near-identical trials)")
+            result = _with_warning(
+                result,
+                "trial-family Sharpe variance suspiciously low "
+                "(possible DSR gaming by near-identical trials)",
+            )
         return result
 
 
@@ -184,4 +213,5 @@ def _suspiciously_low_variance(sharpes: Sequence[float], *, rel: float = 0.01) -
 
 def _with_warning(res: DeflatedSharpeResult, msg: str) -> DeflatedSharpeResult:
     from dataclasses import replace
+
     return replace(res, warnings=(*res.warnings, msg))

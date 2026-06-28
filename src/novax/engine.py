@@ -11,6 +11,7 @@ the final BarView so it is causal.
 PnL: computed internally from fill prices and CostModel. The strategy returns
 only a Signal; it has zero influence over cost or PnL figures.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -59,7 +60,7 @@ class BarView:
 class Position:
     """Read-only snapshot passed to the strategy. Engine owns mutable state."""
 
-    direction: str       # "FLAT" | "LONG" | "SHORT"
+    direction: str  # "FLAT" | "LONG" | "SHORT"
     entry_price: float | None = None
     entry_ts: datetime | None = None
     size: float = 1.0
@@ -133,9 +134,7 @@ class BacktestEngine:
             )
         if not report.passed:
             failures = "; ".join(c.detail for c in report.failures())
-            raise ValueError(
-                f"data quality gate failed — engine refuses to run: {failures}"
-            )
+            raise ValueError(f"data quality gate failed — engine refuses to run: {failures}")
         if len(bars) < 2:
             raise ValueError("engine requires at least 2 bars to execute any trade")
 
@@ -186,8 +185,14 @@ class BacktestEngine:
             elif pos.is_long:
                 if signal is Signal.FLAT:
                     trade, cumulative = _close(
-                        pos, fill_price, fill_ts, inst,
-                        self.cost_model, self.lots, session, cumulative,
+                        pos,
+                        fill_price,
+                        fill_ts,
+                        inst,
+                        self.cost_model,
+                        self.lots,
+                        session,
+                        cumulative,
                     )
                     trades.append(trade)
                     equity.append(cumulative)
@@ -195,8 +200,14 @@ class BacktestEngine:
                 elif signal is Signal.SHORT:
                     # Flatten existing LONG, then open SHORT at the same fill.
                     trade, cumulative = _close(
-                        pos, fill_price, fill_ts, inst,
-                        self.cost_model, self.lots, session, cumulative,
+                        pos,
+                        fill_price,
+                        fill_ts,
+                        inst,
+                        self.cost_model,
+                        self.lots,
+                        session,
+                        cumulative,
                     )
                     trades.append(trade)
                     equity.append(cumulative)
@@ -206,8 +217,14 @@ class BacktestEngine:
             elif pos.is_short:
                 if signal is Signal.FLAT:
                     trade, cumulative = _close(
-                        pos, fill_price, fill_ts, inst,
-                        self.cost_model, self.lots, session, cumulative,
+                        pos,
+                        fill_price,
+                        fill_ts,
+                        inst,
+                        self.cost_model,
+                        self.lots,
+                        session,
+                        cumulative,
                     )
                     trades.append(trade)
                     equity.append(cumulative)
@@ -215,8 +232,14 @@ class BacktestEngine:
                 elif signal is Signal.LONG:
                     # Flatten existing SHORT, then open LONG at the same fill.
                     trade, cumulative = _close(
-                        pos, fill_price, fill_ts, inst,
-                        self.cost_model, self.lots, session, cumulative,
+                        pos,
+                        fill_price,
+                        fill_ts,
+                        inst,
+                        self.cost_model,
+                        self.lots,
+                        session,
+                        cumulative,
                     )
                     trades.append(trade)
                     equity.append(cumulative)
@@ -229,6 +252,7 @@ class BacktestEngine:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _close(
     pos: Position,
@@ -245,16 +269,8 @@ def _close(
     assert pos.entry_ts is not None
 
     sign = 1.0 if pos.is_long else -1.0
-    raw_pnl = (
-        sign
-        * (exit_price - pos.entry_price)
-        / inst.pip_size
-        * inst.pip_value_per_lot
-        * lots
-    )
-    cost = cost_model.round_trip_cost_currency(
-        inst, lots=lots, atr=Pips(0.0), session=session
-    )
+    raw_pnl = sign * (exit_price - pos.entry_price) / inst.pip_size * inst.pip_value_per_lot * lots
+    cost = cost_model.round_trip_cost_currency(inst, lots=lots, atr=Pips(0.0), session=session)
     net_pnl = raw_pnl - cost
 
     trade = TradeRecord(

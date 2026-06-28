@@ -1,4 +1,5 @@
 """Cost-model behavior tests — conservatism, XAU distinctness, stress, slippage."""
+
 import pytest
 
 from novax.costs import DEFAULT_COST_MODEL, CostModel

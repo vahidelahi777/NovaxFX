@@ -14,6 +14,7 @@ a context manager that:
 `audit_artifacts_match_trials` is the CI invariant: no orphan artifacts, and every
 completed trial produced at least one artifact.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -27,8 +28,10 @@ from .provenance import git_commit, sha256_obj
 from .trial_registry import Trial, TrialRegistry, TrialStatus
 
 __all__ = [
-    "Evaluation", "ExperimentRunner",
-    "audit_artifacts_match_trials", "audit_campaign_integrity",
+    "Evaluation",
+    "ExperimentRunner",
+    "audit_artifacts_match_trials",
+    "audit_campaign_integrity",
 ]
 
 
@@ -48,13 +51,20 @@ class Evaluation:
         self.observed_sharpe = value
 
     def emit(
-        self, artifact_type: ArtifactType, payload: Mapping[str, object],
-        *, parents: tuple[str, ...] = (),
+        self,
+        artifact_type: ArtifactType,
+        payload: Mapping[str, object],
+        *,
+        parents: tuple[str, ...] = (),
     ) -> Artifact:
         art = self._artifacts.register(
-            run_id=self.run_id, trial_id=self.trial_id, campaign_id=self.campaign_id,
-            artifact_type=artifact_type, provenance=self._provenance,
-            payload=dict(payload), parent_ids=parents,
+            run_id=self.run_id,
+            trial_id=self.trial_id,
+            campaign_id=self.campaign_id,
+            artifact_type=artifact_type,
+            provenance=self._provenance,
+            payload=dict(payload),
+            parent_ids=parents,
         )
         self._emitted += 1
         return art
@@ -78,8 +88,14 @@ class ExperimentRunner:
 
     @contextmanager
     def evaluate(
-        self, *, strategy: str, instrument: str, timeframe: str, session: str | None,
-        params: Mapping[str, float | int | str], random_seed: int,
+        self,
+        *,
+        strategy: str,
+        instrument: str,
+        timeframe: str,
+        session: str | None,
+        params: Mapping[str, float | int | str],
+        random_seed: int,
         validation_split: str = "research",
     ) -> Iterator[Evaluation]:
         run_id = uuid.uuid4().hex
@@ -99,12 +115,21 @@ class ExperimentRunner:
         }
         # 1) log the trial BEFORE the body. If this raises, the body never runs.
         trial = Trial(
-            strategy=strategy, instrument=instrument, timeframe=timeframe, session=session,
-            params=dict(params), feature_version=self.feature_version,
-            data_version=self.data_version, cost_model_version=self.cost_model_version,
-            validation_split=validation_split, run_timestamp=datetime.now(UTC),
-            git_commit=commit, random_seed=random_seed, observed_sharpe=0.0,
-            campaign_id=self.campaign_id, status=TrialStatus.RUNNING,
+            strategy=strategy,
+            instrument=instrument,
+            timeframe=timeframe,
+            session=session,
+            params=dict(params),
+            feature_version=self.feature_version,
+            data_version=self.data_version,
+            cost_model_version=self.cost_model_version,
+            validation_split=validation_split,
+            run_timestamp=datetime.now(UTC),
+            git_commit=commit,
+            random_seed=random_seed,
+            observed_sharpe=0.0,
+            campaign_id=self.campaign_id,
+            status=TrialStatus.RUNNING,
         )
         self.registry.log(trial)
         self.artifacts.register_trial_id(trial.result_id)
@@ -122,12 +147,19 @@ class ExperimentRunner:
 
 def _with_status(trial: Trial, status: TrialStatus, sharpe: float) -> Trial:
     from dataclasses import replace
-    return replace(trial, status=status, observed_sharpe=sharpe,
-                   run_timestamp=datetime.now(UTC), result_id=trial.result_id)
+
+    return replace(
+        trial,
+        status=status,
+        observed_sharpe=sharpe,
+        run_timestamp=datetime.now(UTC),
+        result_id=trial.result_id,
+    )
 
 
 def audit_artifacts_match_trials(
-    registry: TrialRegistry, artifacts: ArtifactRegistry,
+    registry: TrialRegistry,
+    artifacts: ArtifactRegistry,
 ) -> list[str]:
     """CI invariant. Returns a list of violations (empty == healthy).
 
@@ -150,8 +182,10 @@ def audit_artifacts_match_trials(
 
 
 def audit_campaign_integrity(
-    registry: TrialRegistry, artifacts: ArtifactRegistry,
-    campaign_id: str, strategy: str,
+    registry: TrialRegistry,
+    artifacts: ArtifactRegistry,
+    campaign_id: str,
+    strategy: str,
 ) -> list[str]:
     """Strict per-campaign invariant: the set of trial_ids referenced by artifacts
     must EQUAL the set of COMPLETE trials in the campaign — no more, no fewer.
@@ -168,7 +202,8 @@ def audit_campaign_integrity(
     """
     violations: list[str] = []
     complete = {
-        t.result_id for t in registry.campaign(campaign_id, strategy)
+        t.result_id
+        for t in registry.campaign(campaign_id, strategy)
         if t.status == TrialStatus.COMPLETE
     }
     art_trials = {a.trial_id for a in artifacts.all() if a.trial_id in complete}

@@ -6,6 +6,7 @@ so any year is covered, and the previously-missed mid-week holidays (Thanksgivin
 Good Friday, July 4) are caught. A `CalendarProvider` abstraction allows
 instrument-specific calendars (e.g. XAU); missing calendar data fails closed.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -16,8 +17,13 @@ from zoneinfo import ZoneInfo
 UTC = UTC
 
 __all__ = [
-    "CalendarProvider", "ComputedHolidayProvider", "MarketCalendar",
-    "DEFAULT_FX_CALENDAR", "is_fx_market_open", "easter", "good_friday",
+    "CalendarProvider",
+    "ComputedHolidayProvider",
+    "MarketCalendar",
+    "DEFAULT_FX_CALENDAR",
+    "is_fx_market_open",
+    "easter",
+    "good_friday",
 ]
 
 
@@ -78,22 +84,22 @@ class ComputedHolidayProvider:
 
     def full_closures(self, year: int) -> set[date]:
         return {
-            date(year, 1, 1),                  # New Year's Day
-            good_friday(year),                 # Good Friday
-            date(year, 12, 25),                # Christmas
-            date(year, 12, 26),                # Boxing Day (UK)
-            _observed(date(year, 7, 4)),       # US Independence Day (observed)
-            _nth_weekday(year, 11, 3, 4),      # US Thanksgiving (4th Thu Nov)
-            _nth_weekday(year, 1, 0, 3),       # US MLK Day (3rd Mon Jan)
-            _nth_weekday(year, 2, 0, 3),       # US Presidents' Day
-            _last_weekday(year, 5, 0),         # US Memorial Day (last Mon May)
-            _nth_weekday(year, 9, 0, 1),       # US Labor Day (1st Mon Sep)
+            date(year, 1, 1),  # New Year's Day
+            good_friday(year),  # Good Friday
+            date(year, 12, 25),  # Christmas
+            date(year, 12, 26),  # Boxing Day (UK)
+            _observed(date(year, 7, 4)),  # US Independence Day (observed)
+            _nth_weekday(year, 11, 3, 4),  # US Thanksgiving (4th Thu Nov)
+            _nth_weekday(year, 1, 0, 3),  # US MLK Day (3rd Mon Jan)
+            _nth_weekday(year, 2, 0, 3),  # US Presidents' Day
+            _last_weekday(year, 5, 0),  # US Memorial Day (last Mon May)
+            _nth_weekday(year, 9, 0, 1),  # US Labor Day (1st Mon Sep)
         }
 
     def half_days(self, year: int) -> set[date]:
         return {
             _nth_weekday(year, 11, 3, 4) + timedelta(days=1),  # Black Friday
-            date(year, 12, 24),                                # Christmas Eve
+            date(year, 12, 24),  # Christmas Eve
         }
 
 
@@ -101,8 +107,8 @@ class ComputedHolidayProvider:
 class MarketCalendar:
     name: str = "fx"
     provider: CalendarProvider = field(default_factory=ComputedHolidayProvider)
-    week_close_local: time = time(17, 0)   # Friday NY close
-    week_open_local: time = time(17, 0)    # Sunday NY open
+    week_close_local: time = time(17, 0)  # Friday NY close
+    week_open_local: time = time(17, 0)  # Sunday NY open
     half_day_close_local: time = time(12, 0)
     tz: str = "America/New_York"
 

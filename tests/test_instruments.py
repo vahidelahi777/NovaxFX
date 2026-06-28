@@ -1,4 +1,5 @@
 """Instrument registry + pip-convention tests (the conventions that silently bite)."""
+
 import pytest
 
 from novax.instruments import (
@@ -17,7 +18,7 @@ def test_all_four_instruments_present():
 def test_pip_sizes_are_correct():
     assert get_instrument("EUR/USD").pip_size == 0.0001
     assert get_instrument("GBP/USD").pip_size == 0.0001
-    assert get_instrument("USD/JPY").pip_size == 0.01     # not 0.0001
+    assert get_instrument("USD/JPY").pip_size == 0.01  # not 0.0001
     assert get_instrument("XAU/USD").pip_size == 0.1
 
 

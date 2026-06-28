@@ -5,6 +5,7 @@ Go/No-Go gate consumes, so the enforcement layer can be tested against realistic
 flows (e.g. "the luckiest of 200 random trials is rejected"). Real strategies,
 features, and ingested data are Phase 1.
 """
+
 from __future__ import annotations
 
 import random
@@ -37,7 +38,9 @@ class BaselineRandomStrategy:
 
 
 def emit_required_artifacts(
-    ev: Evaluation, pnls: Sequence[float], *,
+    ev: Evaluation,
+    pnls: Sequence[float],
+    *,
     lockbox_expectancy: float | None = None,
     window_expectancies: Sequence[float] | None = None,
     null_distribution: Sequence[float] | None = None,
@@ -59,21 +62,36 @@ def emit_required_artifacts(
     ev.emit(ArtifactType.TRADE_LEDGER, {"pnls": list(pnls)})
     ev.emit(ArtifactType.DATA_QUALITY, {"passed": data_quality_passed})
     ev.emit(ArtifactType.NO_LOOKAHEAD, {"passed": no_lookahead_passed})
-    ev.emit(ArtifactType.WALK_FORWARD,
-            {"window_expectancies": list(window_expectancies or [0.1] * 10)})
-    ev.emit(ArtifactType.RANDOMIZED_ENTRY,
-            {"null_distribution": list(null_distribution or [0.0] * 100),
-             "observed_stat": float(
-                 observed_stat if observed_stat is not None else 1.0)})
-    ev.emit(ArtifactType.ONE_BAR_DELAY,
-            {"base_expectancy": exp,
-             "delayed_expectancy": float(
-                 delayed_expectancy if delayed_expectancy is not None else exp)})
-    ev.emit(ArtifactType.COST_STRESS,
-            {"expectancy_at_1_5x": float(
-                expectancy_at_1_5x if expectancy_at_1_5x is not None else exp)})
-    ev.emit(ArtifactType.MONTE_CARLO_DD,
-            {"drawdowns_pct": list(mc_drawdowns_pct or [0.05] * 100)})
-    ev.emit(ArtifactType.LOCKBOX,
-            {"expectancy": float(lockbox_expectancy if lockbox_expectancy is not None else exp)})
+    ev.emit(
+        ArtifactType.WALK_FORWARD, {"window_expectancies": list(window_expectancies or [0.1] * 10)}
+    )
+    ev.emit(
+        ArtifactType.RANDOMIZED_ENTRY,
+        {
+            "null_distribution": list(null_distribution or [0.0] * 100),
+            "observed_stat": float(observed_stat if observed_stat is not None else 1.0),
+        },
+    )
+    ev.emit(
+        ArtifactType.ONE_BAR_DELAY,
+        {
+            "base_expectancy": exp,
+            "delayed_expectancy": float(
+                delayed_expectancy if delayed_expectancy is not None else exp
+            ),
+        },
+    )
+    ev.emit(
+        ArtifactType.COST_STRESS,
+        {
+            "expectancy_at_1_5x": float(
+                expectancy_at_1_5x if expectancy_at_1_5x is not None else exp
+            )
+        },
+    )
+    ev.emit(ArtifactType.MONTE_CARLO_DD, {"drawdowns_pct": list(mc_drawdowns_pct or [0.05] * 100)})
+    ev.emit(
+        ArtifactType.LOCKBOX,
+        {"expectancy": float(lockbox_expectancy if lockbox_expectancy is not None else exp)},
+    )
     return ev.run_id

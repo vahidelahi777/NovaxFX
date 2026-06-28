@@ -10,6 +10,7 @@ Changes vs Phase 0:
 
 Pure stdlib (statistics.NormalDist). DSR follows Bailey & López de Prado.
 """
+
 from __future__ import annotations
 
 import math
@@ -26,13 +27,29 @@ _N = NormalDist()
 _EULER_MASCHERONI = 0.5772156649015329
 
 __all__ = [
-    "Verdict", "TradeRecord", "StrategyMetrics", "GoNoGoResult",
-    "WalkForwardWindow", "Lockbox", "DeflatedSharpeResult",
-    "profit_factor", "expectancy", "win_rate", "max_drawdown", "sharpe",
-    "estimate_sr_variance", "expected_max_sharpe", "deflated_sharpe_ratio",
-    "compute_metrics", "evaluate_go_no_go",
-    "walk_forward_windows", "purged_kfold", "block_bootstrap",
-    "bootstrap_statistic", "percentile_rank", "shuffle_pnls_mean",
+    "Verdict",
+    "TradeRecord",
+    "StrategyMetrics",
+    "GoNoGoResult",
+    "WalkForwardWindow",
+    "Lockbox",
+    "DeflatedSharpeResult",
+    "profit_factor",
+    "expectancy",
+    "win_rate",
+    "max_drawdown",
+    "sharpe",
+    "estimate_sr_variance",
+    "expected_max_sharpe",
+    "deflated_sharpe_ratio",
+    "compute_metrics",
+    "evaluate_go_no_go",
+    "walk_forward_windows",
+    "purged_kfold",
+    "block_bootstrap",
+    "bootstrap_statistic",
+    "percentile_rank",
+    "shuffle_pnls_mean",
 ]
 
 
@@ -47,7 +64,7 @@ class TradeRecord:
     entry_ts: datetime
     exit_ts: datetime
     symbol: str
-    pnl: float          # net of costs; be consistent (currency OR R) across a run
+    pnl: float  # net of costs; be consistent (currency OR R) across a run
     session: str | None = None
     regime: str | None = None
 
@@ -58,6 +75,7 @@ class TradeRecord:
 
 
 # ----------------------------- metric helpers ------------------------------ #
+
 
 def profit_factor(pnls: Sequence[float]) -> float:
     gains = sum(p for p in pnls if p > 0)
@@ -121,7 +139,7 @@ def expected_max_sharpe(n_trials: int, sr_variance: float) -> float:
 class DeflatedSharpeResult:
     probability: float
     observed_sharpe: float
-    benchmark_sharpe: float   # expected max Sharpe across trials (sr0)
+    benchmark_sharpe: float  # expected max Sharpe across trials (sr0)
     n_trials: int
     n_obs: int
     sr_variance: float
@@ -138,7 +156,7 @@ def deflated_sharpe_ratio(
     *,
     n_obs: int,
     n_trials: int,
-    sr_variance: float,          # NO DEFAULT — fail closed
+    sr_variance: float,  # NO DEFAULT — fail closed
     skew: float = 0.0,
     kurtosis: float = SETTINGS.fx_kurtosis_estimate,
 ) -> DeflatedSharpeResult:
@@ -174,13 +192,20 @@ def deflated_sharpe_ratio(
     denom = math.sqrt(max(1e-12, 1 - skew * observed_sr + ((kurtosis - 1) / 4) * observed_sr**2))
     z = (observed_sr - sr0) * math.sqrt(n_obs - 1) / denom
     return DeflatedSharpeResult(
-        probability=_N.cdf(z), observed_sharpe=observed_sr, benchmark_sharpe=sr0,
-        n_trials=n_trials, n_obs=n_obs, sr_variance=sr_variance, skew=skew,
-        kurtosis=kurtosis, warnings=tuple(warnings),
+        probability=_N.cdf(z),
+        observed_sharpe=observed_sr,
+        benchmark_sharpe=sr0,
+        n_trials=n_trials,
+        n_obs=n_obs,
+        sr_variance=sr_variance,
+        skew=skew,
+        kurtosis=kurtosis,
+        warnings=tuple(warnings),
     )
 
 
 # ------------------------------- aggregates -------------------------------- #
+
 
 @dataclass(frozen=True, slots=True)
 class StrategyMetrics:
@@ -199,12 +224,17 @@ class StrategyMetrics:
 def compute_metrics(trades: Sequence[TradeRecord]) -> StrategyMetrics:
     pnls = [t.pnl for t in trades]
     return StrategyMetrics(
-        n_trades=len(pnls), expectancy=expectancy(pnls), profit_factor=profit_factor(pnls),
-        win_rate=win_rate(pnls), sharpe=sharpe(pnls), max_drawdown=max_drawdown(pnls),
+        n_trades=len(pnls),
+        expectancy=expectancy(pnls),
+        profit_factor=profit_factor(pnls),
+        win_rate=win_rate(pnls),
+        sharpe=sharpe(pnls),
+        max_drawdown=max_drawdown(pnls),
     )
 
 
 # ----------------------------- splitters ----------------------------------- #
+
 
 @dataclass(frozen=True, slots=True)
 class WalkForwardWindow:
@@ -215,8 +245,10 @@ class WalkForwardWindow:
 
     def __post_init__(self) -> None:
         for label, dt in (
-            ("train_start", self.train_start), ("train_end", self.train_end),
-            ("test_start", self.test_start), ("test_end", self.test_end),
+            ("train_start", self.train_start),
+            ("train_end", self.train_end),
+            ("test_start", self.test_start),
+            ("test_end", self.test_end),
         ):
             if dt.tzinfo is None:
                 raise ValueError(f"WalkForwardWindow.{label} must be tz-aware UTC")
@@ -225,7 +257,11 @@ class WalkForwardWindow:
 
 
 def walk_forward_windows(
-    start: datetime, end: datetime, *, train: timedelta, test: timedelta,
+    start: datetime,
+    end: datetime,
+    *,
+    train: timedelta,
+    test: timedelta,
     step: timedelta | None = None,
 ) -> list[WalkForwardWindow]:
     """Rolling anchored walk-forward windows. step defaults to `test` (non-overlapping tests)."""
@@ -246,7 +282,10 @@ def walk_forward_windows(
 
 
 def purged_kfold(
-    n_samples: int, *, n_splits: int, embargo: int,
+    n_samples: int,
+    *,
+    n_splits: int,
+    embargo: int,
 ) -> list[tuple[list[int], list[int]]]:
     """Purged k-fold over a time-ordered index, with an embargo gap.
 
@@ -272,8 +311,13 @@ def purged_kfold(
 
 # ----------------------------- bootstrap ----------------------------------- #
 
+
 def block_bootstrap(
-    values: Sequence[float], *, block_size: int, n_resamples: int, seed: int = 0,
+    values: Sequence[float],
+    *,
+    block_size: int,
+    n_resamples: int,
+    seed: int = 0,
 ) -> list[list[float]]:
     """Moving-block bootstrap: resample contiguous blocks to preserve autocorrelation.
 
@@ -292,20 +336,27 @@ def block_bootstrap(
         series: list[float] = []
         while len(series) < n:
             s = rng.randrange(max_start)
-            series.extend(values[s:s + block_size])
+            series.extend(values[s : s + block_size])
         out.append(series[:n])
     return out
 
 
 def bootstrap_statistic(
-    values: Sequence[float], stat_fn: Callable[[Sequence[float]], float], *,
-    block_size: int, n_resamples: int, seed: int = 0,
+    values: Sequence[float],
+    stat_fn: Callable[[Sequence[float]], float],
+    *,
+    block_size: int,
+    n_resamples: int,
+    seed: int = 0,
 ) -> list[float]:
-    return [stat_fn(s) for s in block_bootstrap(
-        values, block_size=block_size, n_resamples=n_resamples, seed=seed)]
+    return [
+        stat_fn(s)
+        for s in block_bootstrap(values, block_size=block_size, n_resamples=n_resamples, seed=seed)
+    ]
 
 
 # ------------------------- destructive-battery stats ----------------------- #
+
 
 def percentile_rank(value: float, distribution: Sequence[float]) -> float:
     """Fraction of `distribution` below `value` (0..1). For randomized-entry nulls."""
@@ -329,6 +380,7 @@ def shuffle_pnls_mean(pnls: Sequence[float], *, n_shuffles: int, seed: int = 0) 
 
 # ------------------------------- lockbox ----------------------------------- #
 
+
 @dataclass(slots=True)
 class Lockbox:
     """Out-of-sample guard. May be opened exactly once."""
@@ -350,6 +402,7 @@ class Lockbox:
 
 
 # ------------------------------ go/no-go ----------------------------------- #
+
 
 @dataclass(frozen=True, slots=True)
 class GoNoGoResult:
