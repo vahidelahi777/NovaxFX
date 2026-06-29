@@ -75,3 +75,6 @@ jobs:
 
       - name: "Tests: walk-forward pipeline & metrics"
         run: pytest tests/test_walkforward_pipeline.py -v
+
+      - name: "Tests: data pipeline"
+        run: pytest tests/test_data_pipeline.py -v

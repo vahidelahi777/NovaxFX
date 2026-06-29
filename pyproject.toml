@@ -10,7 +10,10 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Proprietary" }
 authors = [{ name = "Novax" }]
-dependencies = []  # stdlib-only core in Phase 0; no external services
+dependencies = [
+    "pyarrow>=14.0",
+    "duckdb>=0.10",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -41,3 +44,7 @@ strict = true
 files = ["src/novax"]
 warn_unused_ignores = true
 disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["pyarrow", "pyarrow.*", "duckdb"]
+ignore_missing_imports = true
