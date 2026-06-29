@@ -101,12 +101,26 @@ class BacktestEngine:
 
     `lots` is the notional lot size passed to the cost model. Default 1.0.
     `session` is the session label used for session-multiplied cost lookups.
+    `atr_period` controls Wilder's ATR used for ATR-scaled slippage. Default 14.
+    `atr_warmup_floor_pips` sets a minimum ATR (in pips) during the warmup
+    period before full ATR history is available, preventing zero-cost early
+    fills on unusually quiet opening bars. Default 2.0 pips.
     """
 
     symbol: str
     timeframe: str
     cost_model: CostModel = field(default_factory=lambda: DEFAULT_COST_MODEL)
     lots: float = 1.0
+    atr_period: int = 14
+    atr_warmup_floor_pips: float = 2.0
+
+    def __post_init__(self) -> None:
+        if self.atr_period < 1:
+            raise ValueError(f"atr_period must be >= 1, got {self.atr_period}")
+        if self.atr_warmup_floor_pips < 0:
+            raise ValueError(
+                f"atr_warmup_floor_pips must be >= 0, got {self.atr_warmup_floor_pips}"
+            )
 
     def run(
         self,
@@ -147,7 +161,44 @@ class BacktestEngine:
         cumulative = 0.0
         pos = _FLAT
 
+        # --- Incremental causal ATR state (Wilder's smoothing) ---------------
+        # ATR is maintained in price units and converted to Pips at each step.
+        # Causality: TR at step i uses bars_t[i] and bars_t[i-1] only — both
+        # already visible in the strategy's BarView at step i. No future bar
+        # is accessed. Warmup uses a running mean of available TRs floored at
+        # atr_warmup_floor_pips to avoid zero-cost fills on quiet early bars.
+        _atr_floor = self.atr_warmup_floor_pips * inst.pip_size
+        _tr_sum: float = 0.0
+        _tr_count: int = 0
+        _current_atr: float = _atr_floor  # price units; updated each step
+        _atr_warm: bool = False
+
         for i in range(n):
+            # -- True Range at step i (causal: uses only bars[i] and bars[i-1])
+            bar_i = bars_t[i]
+            if i == 0:
+                tr = bar_i.high - bar_i.low
+            else:
+                prev_close = bars_t[i - 1].close
+                tr = max(
+                    bar_i.high - bar_i.low,
+                    abs(bar_i.high - prev_close),
+                    abs(bar_i.low - prev_close),
+                )
+
+            # -- Wilder's incremental ATR update
+            if not _atr_warm:
+                _tr_sum += tr
+                _tr_count += 1
+                _current_atr = max(_tr_sum / _tr_count, _atr_floor)
+                if _tr_count == self.atr_period:
+                    _atr_warm = True
+            else:
+                _current_atr = (_current_atr * (self.atr_period - 1) + tr) / self.atr_period
+
+            # Convert ATR to Pips for the cost model at this step.
+            atr_pips = Pips(_current_atr / inst.pip_size)
+
             # The strategy only ever receives bars up to and including bar i.
             view = BarView(bars_t[: i + 1])
             signal = strategy.on_bar(view, pos)
@@ -165,6 +216,7 @@ class BacktestEngine:
                         lots=self.lots,
                         session=session,
                         cumulative=cumulative,
+                        atr=atr_pips,
                     )
                     trades.append(trade)
                     equity.append(cumulative)
@@ -193,6 +245,7 @@ class BacktestEngine:
                         self.lots,
                         session,
                         cumulative,
+                        atr=atr_pips,
                     )
                     trades.append(trade)
                     equity.append(cumulative)
@@ -208,6 +261,7 @@ class BacktestEngine:
                         self.lots,
                         session,
                         cumulative,
+                        atr=atr_pips,
                     )
                     trades.append(trade)
                     equity.append(cumulative)
@@ -225,6 +279,7 @@ class BacktestEngine:
                         self.lots,
                         session,
                         cumulative,
+                        atr=atr_pips,
                     )
                     trades.append(trade)
                     equity.append(cumulative)
@@ -240,6 +295,7 @@ class BacktestEngine:
                         self.lots,
                         session,
                         cumulative,
+                        atr=atr_pips,
                     )
                     trades.append(trade)
                     equity.append(cumulative)
@@ -263,14 +319,22 @@ def _close(
     lots: float,
     session: str | None,
     cumulative: float,
+    *,
+    atr: Pips,
 ) -> tuple[TradeRecord, float]:
-    """Close `pos` at `exit_price`, return (TradeRecord, new_cumulative_equity)."""
+    """Close `pos` at `exit_price`, return (TradeRecord, new_cumulative_equity).
+
+    `atr` is the Wilder ATR at the bar that generated the close signal,
+    expressed in Pips. It drives the ATR-scaled slippage component of the
+    cost model. Must be provided by the caller — Pips(0.0) is never correct
+    for a real bar series.
+    """
     assert pos.entry_price is not None  # guaranteed by Position construction path
     assert pos.entry_ts is not None
 
     sign = 1.0 if pos.is_long else -1.0
     raw_pnl = sign * (exit_price - pos.entry_price) / inst.pip_size * inst.pip_value_per_lot * lots
-    cost = cost_model.round_trip_cost_currency(inst, lots=lots, atr=Pips(0.0), session=session)
+    cost = cost_model.round_trip_cost_currency(inst, lots=lots, atr=atr, session=session)
     net_pnl = raw_pnl - cost
 
     trade = TradeRecord(

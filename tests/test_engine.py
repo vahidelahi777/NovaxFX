@@ -245,14 +245,23 @@ def test_last_bar_with_open_position_force_closes():
 # ---------------------------------------------------------------------------
 
 
-def _expected_round_trip_cost() -> float:
+_ZERO_PIPS = Pips(0.0)
+_FLOOR_PIPS = Pips(2.0)  # engine's default atr_warmup_floor_pips
+
+
+def _expected_round_trip_cost(atr: Pips = _ZERO_PIPS) -> float:
     """Manually compute DEFAULT_COST_MODEL cost for EUR/USD, 1 lot, no session."""
     inst = get_instrument(_SYMBOL)
-    return DEFAULT_COST_MODEL.round_trip_cost_currency(inst, lots=1.0, atr=Pips(0.0), session=None)
+    return DEFAULT_COST_MODEL.round_trip_cost_currency(inst, lots=1.0, atr=atr, session=None)
 
 
 def test_profitable_trade_pnl_net_of_cost():
-    """10 pips LONG gain minus round-trip cost."""
+    """10 pips LONG gain minus round-trip cost including ATR-scaled slippage.
+
+    Flat synthetic bars (high==low==close) produce TR=0 at every step.
+    The engine's warmup floor (default 2.0 pips) is therefore active, so
+    ATR-scaled slippage = slippage_atr_k(0.05) * 2.0 = 0.1 pips per fill.
+    """
     entry_price = 1.10000
     exit_price = 1.10100  # +10 pips
     bars = [
@@ -266,13 +275,17 @@ def test_profitable_trade_pnl_net_of_cost():
     inst = get_instrument(_SYMBOL)
     pip_delta = (exit_price - entry_price) / inst.pip_size  # 10 pips
     raw_pnl = pip_delta * inst.pip_value_per_lot  # 100.0 USD
-    cost = _expected_round_trip_cost()
+    # Flat bars → TR=0 → ATR stays at warmup floor (2.0 pips default).
+    cost = _expected_round_trip_cost(atr=_FLOOR_PIPS)
     expected = raw_pnl - cost
     assert math.isclose(result.trades[0].pnl, expected, rel_tol=1e-9)
 
 
 def test_losing_trade_pnl_net_of_cost():
-    """Entry and exit at same price → only cost subtracted (net negative)."""
+    """Entry and exit at same price → only cost subtracted (net negative).
+
+    Flat bars → TR=0 → engine holds ATR at the warmup floor (2.0 pips).
+    """
     price = 1.10000
     bars = [
         _bar(0, price),
@@ -281,7 +294,8 @@ def test_losing_trade_pnl_net_of_cost():
     ]
     result = _engine().run(bars, _LongOnFirst(), _passing_report(3))
     assert len(result.trades) == 1
-    cost = _expected_round_trip_cost()
+    # Flat bars → ATR = warmup floor = 2.0 pips.
+    cost = _expected_round_trip_cost(atr=_FLOOR_PIPS)
     assert math.isclose(result.trades[0].pnl, -cost, rel_tol=1e-9)
 
 
