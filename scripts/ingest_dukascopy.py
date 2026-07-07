@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from novax.data.cleaning.normalize import ticks_to_1m_bars
@@ -32,7 +32,7 @@ from novax.data.storage.parquet_store import ParquetStore
 
 
 def _parse_date(s: str) -> datetime:
-    return datetime.strptime(s, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    return datetime.strptime(s, "%Y-%m-%d").replace(tzinfo=UTC)
 
 
 def _date_range(start: datetime, end: datetime) -> list[datetime]:
@@ -73,6 +73,12 @@ def main() -> None:
         default=30,
         help="Per-request HTTP timeout in seconds (default: 30)",
     )
+    parser.add_argument(
+        "--request-delay",
+        type=float,
+        default=0.3,
+        help="Seconds to sleep between hourly requests to avoid rate-limiting (default: 0.3)",
+    )
     args = parser.parse_args()
 
     start = _parse_date(args.start)
@@ -86,10 +92,7 @@ def main() -> None:
     days = _date_range(start, end)
     symbol: str = args.symbol.upper()
 
-    print(
-        f"Ingesting {symbol} | {args.start} → {args.end} "
-        f"({len(days)} days) | output: {root}"
-    )
+    print(f"Ingesting {symbol} | {args.start} → {args.end} ({len(days)} days) | output: {root}")
 
     ok_days = 0
     skipped_days = 0
@@ -98,7 +101,9 @@ def main() -> None:
     for day in days:
         label = day.strftime("%Y-%m-%d")
         try:
-            ticks = fetch_day_ticks(symbol, day, timeout=args.timeout)
+            ticks = fetch_day_ticks(
+                symbol, day, timeout=args.timeout, request_delay=args.request_delay
+            )
         except Exception as exc:  # noqa: BLE001
             print(f"  [{label}] ERROR fetching ticks: {exc}", file=sys.stderr)
             failed_days += 1

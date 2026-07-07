@@ -78,3 +78,6 @@ jobs:
 
       - name: "Tests: data pipeline"
         run: pytest tests/test_data_pipeline.py -v
+
+      - name: "Tests: EMA crossover strategy"
+        run: pytest tests/test_ema_cross.py -v

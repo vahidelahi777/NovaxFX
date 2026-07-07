@@ -78,12 +78,18 @@ INSTRUMENTS: dict[str, Instrument] = {
 
 
 def get_instrument(symbol: str) -> Instrument:
-    """Look up by canonical ("EUR/USD") or OANDA ("EUR_USD") symbol."""
+    """Look up by canonical ("EUR/USD"), OANDA ("EUR_USD"), or compact ("EURUSD") symbol."""
     if symbol in INSTRUMENTS:
         return INSTRUMENTS[symbol]
+    # OANDA format EUR_USD → EUR/USD
     norm = symbol.replace("_", "/")
     if norm in INSTRUMENTS:
         return INSTRUMENTS[norm]
+    # Compact format EURUSD → EUR/USD (all FX pairs in the universe are 6-char base3/quote3)
+    if len(symbol) == 6 and "/" not in symbol:
+        slashed = symbol[:3] + "/" + symbol[3:]
+        if slashed in INSTRUMENTS:
+            return INSTRUMENTS[slashed]
     raise KeyError(f"unknown instrument: {symbol!r}")
 
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import lzma
 import struct
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -80,33 +81,56 @@ def parse_bi5(data: bytes, hour_ts: datetime) -> list[RawTick]:
     return ticks
 
 
-def download_hour(symbol: str, hour_ts: datetime, *, timeout: int = 30) -> bytes | None:
+def download_hour(
+    symbol: str,
+    hour_ts: datetime,
+    *,
+    timeout: int = 30,
+    max_retries: int = 4,
+    retry_delay: float = 2.0,
+) -> bytes | None:
     """Download the .bi5 file for a given symbol and UTC hour.
 
     Returns raw (compressed) bytes, or None if the hour has no data (HTTP 404).
-    All other HTTP errors are re-raised unchanged.
+    Retries with exponential backoff on transient network errors (connection
+    reset, timeout, 5xx). Raises after max_retries exhausted.
     """
     month0 = hour_ts.month - 1  # Dukascopy uses 0-indexed months
     url = (
         f"{_BASE_URL}/{symbol.upper()}/"
         f"{hour_ts.year}/{month0:02d}/{hour_ts.day:02d}/{hour_ts.hour:02d}_ticks.bi5"
     )
-    try:
-        with urllib.request.urlopen(url, timeout=timeout) as resp:
-            return resp.read()  # type: ignore[no-any-return]
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            return None
-        raise
+    last_exc: BaseException | None = None
+    for attempt in range(max_retries + 1):
+        if attempt > 0:
+            time.sleep(retry_delay * (2 ** (attempt - 1)))  # 2s, 4s, 8s, 16s
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as resp:
+                return resp.read()  # type: ignore[no-any-return]
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return None
+            last_exc = exc
+        except (urllib.error.URLError, OSError) as exc:
+            last_exc = exc
+    raise RuntimeError(f"download_hour failed after {max_retries} retries: {url}") from last_exc
 
 
-def fetch_day_ticks(symbol: str, date: datetime, *, timeout: int = 30) -> list[RawTick]:
+def fetch_day_ticks(
+    symbol: str,
+    date: datetime,
+    *,
+    timeout: int = 30,
+    request_delay: float = 0.3,
+) -> list[RawTick]:
     """Fetch all ticks for a single UTC day by downloading 24 hourly .bi5 files.
 
     Args:
         symbol: Instrument symbol, e.g. "EURUSD".
         date: UTC date; time components are replaced internally (hour=0..23).
         timeout: Per-request timeout in seconds.
+        request_delay: Seconds to sleep between hourly requests to avoid
+            rate-limiting. Default 0.3s → ~7s per day of download time.
 
     Returns:
         All ticks for the day sorted by timestamp. Hours with no data (404) are skipped.
@@ -118,6 +142,8 @@ def fetch_day_ticks(symbol: str, date: datetime, *, timeout: int = 30) -> list[R
         raise ValueError("date must be tz-aware UTC")
     ticks: list[RawTick] = []
     for hour in range(24):
+        if hour > 0 and request_delay > 0:
+            time.sleep(request_delay)
         hour_ts = date.replace(hour=hour, minute=0, second=0, microsecond=0, tzinfo=UTC)
         data = download_hour(symbol, hour_ts, timeout=timeout)
         if data is not None:
