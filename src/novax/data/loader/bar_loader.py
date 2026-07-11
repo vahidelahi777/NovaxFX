@@ -13,6 +13,7 @@ from typing import Any
 import duckdb
 
 from ...data_sources import Bar
+from ...instruments import get_instrument
 
 __all__ = ["load_bars"]
 
@@ -43,7 +44,9 @@ def load_bars(
     if start.tzinfo is None or end.tzinfo is None:
         raise ValueError("start and end must be tz-aware UTC")
 
-    data_dir = root / symbol.lower() / timeframe
+    # Normalise to canonical "EUR/USD" form so the path matches ParquetStore.
+    canonical = get_instrument(symbol).symbol
+    data_dir = root / canonical.lower() / timeframe
     parquet_files = list(data_dir.glob("*/*.parquet"))
     if not parquet_files:
         return []

@@ -19,6 +19,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from ...data_sources import Bar
+from ...instruments import get_instrument
 
 __all__ = ["ParquetStore"]
 
@@ -47,7 +48,8 @@ class ParquetStore:
         self.root = root
 
     def bar_path(self, symbol: str, timeframe: str, year: int, month: int) -> Path:
-        return self.root / symbol.lower() / timeframe / str(year) / f"{month:02d}.parquet"
+        canonical = get_instrument(symbol).symbol  # "EUR/USD", "XAU/USD", etc.
+        return self.root / canonical.lower() / timeframe / str(year) / f"{month:02d}.parquet"
 
     def write_bars(self, symbol: str, timeframe: str, bars: Sequence[Bar]) -> None:
         """Write bars to monthly Parquet files.
