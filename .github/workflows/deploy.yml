@@ -36,9 +36,7 @@ jobs:
 
     # For workflow_run: only proceed when CI succeeded.
     # For workflow_dispatch: always proceed (manual trigger is the approval).
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
 
     steps:
       - name: Record deployment start
