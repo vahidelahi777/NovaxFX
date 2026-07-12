@@ -1,0 +1,76 @@
+name: Deploy
+
+# Triggers:
+#   1. Automatic — fires after the CI workflow completes successfully on main.
+#   2. Manual    — "Run workflow" button in the GitHub Actions UI.
+#
+# Required GitHub secrets (set in repo Settings → Secrets → Actions,
+# or under the "production" environment for approval gates):
+#
+#   DEPLOY_HOST   — IP address or hostname of the Hetzner server
+#   DEPLOY_USER   — SSH username (e.g. root or ubuntu)
+#   DEPLOY_KEY    — Private SSH key (PEM format, no passphrase)
+#
+# Server-side prerequisites (one-time setup):
+#   1. The public key matching DEPLOY_KEY must be in ~/.ssh/authorized_keys
+#   2. /opt/NovaxFX must be a git clone of this repo
+#   3. /opt/NovaxFX/.env must contain TWELVEDATA_API_KEY, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+#   4. Docker and Docker Compose plugin must be installed
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false  # never cancel a deploy mid-flight
+
+jobs:
+  deploy:
+    name: Deploy → Hetzner /opt/NovaxFX
+    runs-on: ubuntu-latest
+    environment: production   # enables GitHub deployment tracking + approval gates
+
+    # For workflow_run: only proceed when CI succeeded.
+    # For workflow_dispatch: always proceed (manual trigger is the approval).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Record deployment start
+        run: |
+          echo "Deploying commit ${{ github.sha }}"
+          echo "Triggered by: ${{ github.event_name }}"
+
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          # Pull latest code, rebuild the image, restart the daemon
+          script: |
+            set -e
+            cd /opt/NovaxFX
+
+            echo "=== git pull ==="
+            git pull --ff-only
+
+            echo "=== docker compose build ==="
+            docker compose build prod-daemon
+
+            echo "=== docker compose up ==="
+            docker compose up -d prod-daemon
+
+            echo "=== health check ==="
+            sleep 3
+            docker ps \
+              --filter name=novax-prod-daemon \
+              --format "table {{.Names}}\t{{.Status}}\t{{.RunningFor}}"
+
+      - name: Deployment complete
+        run: echo "Deploy finished successfully."
