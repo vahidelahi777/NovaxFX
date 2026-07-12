@@ -39,17 +39,21 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from novax.data.ingest.twelvedata import fetch_bars
-from novax.engine import BarView, Position
+from novax.engine import BarView, Position, Signal
 from novax.live import (
     STATIC_WEIGHTS,
     AlertStateStore,
+    EventKind,
     EventScheduler,
     EventType,
     LevelStore,
     MultiTFScanner,
     MultiTFScanResult,
     NewsGate,
+    PaperTrader,
+    ScanResult,
     SignalRecord,
+    SignalStatus,
     SignalStore,
     StoredSignal,
     WeeklyLevel,
@@ -169,6 +173,37 @@ def _bos_state_from_h4(bars_h4: list) -> str:
     return bos.state.value if bos is not None else "idle"
 
 
+def _paper_signal(result: MultiTFScanResult, pos_direction: str) -> Signal:
+    """Determine the Signal to pass to PaperTrader based on multi-TF state.
+
+    Entry: only on confirmed multi-TF confluence.
+    Hold/exit: driven by 4H direction so positions survive brief 15M/1H
+    consolidation without premature exit.
+    """
+    if pos_direction == "FLAT":
+        return result.direction if result.confluence else Signal.FLAT
+    return result.h4.signal
+
+
+def _to_scan_result(result: MultiTFScanResult, sig: Signal) -> ScanResult:
+    """Convert MultiTFScanResult to ScanResult for PaperTrader.update()."""
+    return ScanResult(
+        ts=result.scanned_at,
+        symbol=result.symbol,
+        timeframe="m15",
+        signal=sig,
+        bos_state="unknown",
+        has_ob=False,
+        ob_high=None,
+        ob_low=None,
+        prev_week_high=None,
+        prev_week_low=None,
+        sl=result.sl,
+        tp=result.tp,
+        n_bars_used=0,
+    )
+
+
 def _send_heartbeat(
     *,
     symbol: str,
@@ -199,6 +234,8 @@ def _handle_15m(
     level_store: LevelStore,
     signal_store: SignalStore,
     news_gate: NewsGate,
+    paper_trader: PaperTrader,
+    paper_entry_id: list[str | None],
     score_threshold: int,
     api_key: str,
     telegram_token: str,
@@ -263,6 +300,38 @@ def _handle_15m(
         regime="unknown",
     )
     signal_store.insert(sig)
+
+    # Paper trader — run every bar to track virtual P&L
+    if bars_m15:
+        paper_sig = _paper_signal(result, paper_trader.position.direction)
+        paper_scan = _to_scan_result(result, paper_sig)
+        ev = paper_trader.update(paper_scan, bars_m15[-1])
+
+        if ev.kind in (EventKind.ENTRY_LONG, EventKind.ENTRY_SHORT):
+            paper_entry_id[0] = sig.id
+            signal_store.update_status(sig.id, SignalStatus.ACTIVE)
+            log.info(
+                "PaperTrader ENTRY %s  entry=%.2f  SL=%s  TP=%s",
+                ev.kind, ev.price,
+                f"{ev.sl:.2f}" if ev.sl else "n/a",
+                f"{ev.tp:.2f}" if ev.tp else "n/a",
+            )
+        elif ev.kind in (EventKind.EXIT_TP, EventKind.EXIT_SL, EventKind.EXIT_SIGNAL):
+            pnl_pips = round(ev.pnl / _XAUUSD_PIP, 1) if ev.pnl is not None else None
+            status = (
+                SignalStatus.WIN if ev.kind == EventKind.EXIT_TP
+                else SignalStatus.LOSS if ev.kind == EventKind.EXIT_SL
+                else SignalStatus.EXPIRED
+            )
+            if paper_entry_id[0] is not None:
+                signal_store.update_status(paper_entry_id[0], status, pnl_pips=pnl_pips)
+                paper_entry_id[0] = None
+            log.info(
+                "PaperTrader EXIT  %s  exit=%.2f  pnl=%.1f pips  cum=%.2f",
+                ev.kind, ev.price,
+                pnl_pips if pnl_pips is not None else 0.0,
+                ev.cumulative_pnl,
+            )
 
     # Legacy JSONL store — kept for backward compatibility
     level_store.append_signal(
@@ -585,10 +654,12 @@ def main() -> None:
     state_dir = Path(args.state_dir)
     state_dir.mkdir(parents=True, exist_ok=True)
 
-    alert_store  = AlertStateStore(state_dir / f"alert_state_{symbol}.json")
-    level_store  = LevelStore(state_dir / f"levels_{symbol}.jsonl")
-    signal_store = SignalStore(state_dir / f"signals_{symbol}.duckdb")
-    news_gate    = NewsGate(api_key=api_key)
+    alert_store    = AlertStateStore(state_dir / f"alert_state_{symbol}.json")
+    level_store    = LevelStore(state_dir / f"levels_{symbol}.jsonl")
+    signal_store   = SignalStore(state_dir / f"signals_{symbol}.duckdb")
+    news_gate      = NewsGate(api_key=api_key)
+    paper_trader   = PaperTrader(state_dir / f"paper_{symbol}.json")
+    paper_entry_id: list[str | None] = [None]
     scanner = MultiTFScanner(
         symbol,
         h4_params={
@@ -660,6 +731,8 @@ def main() -> None:
                         level_store=level_store,
                         signal_store=signal_store,
                         news_gate=news_gate,
+                        paper_trader=paper_trader,
+                        paper_entry_id=paper_entry_id,
                         score_threshold=args.score_threshold,
                         api_key=api_key,
                         telegram_token=telegram_token,

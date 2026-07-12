@@ -100,6 +100,18 @@ class PaperTrader:
         ts = last_bar.ts
         price = last_bar.close
 
+        # --- SL/TP pre-check: detect breach on every bar, even during HOLD ---
+        if cur_dir == "LONG":
+            if pos.sl is not None and last_bar.low <= pos.sl:
+                return self._close_long(pos, result, last_bar, ts, price)
+            if pos.tp is not None and last_bar.high >= pos.tp:
+                return self._close_long(pos, result, last_bar, ts, price)
+        elif cur_dir == "SHORT":
+            if pos.sl is not None and last_bar.high >= pos.sl:
+                return self._close_short(pos, result, last_bar, ts, price)
+            if pos.tp is not None and last_bar.low <= pos.tp:
+                return self._close_short(pos, result, last_bar, ts, price)
+
         # --- FLAT cases ---
         if cur_dir == "FLAT":
             if new_sig == Signal.FLAT:
