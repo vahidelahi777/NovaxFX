@@ -15,6 +15,7 @@ from .tz_utils import fmt_both
 __all__ = [
     "fmt_confluence_alert",
     "fmt_daily_report",
+    "fmt_heartbeat",
     "fmt_market_close",
     "fmt_market_open",
     "fmt_session_open",
@@ -230,6 +231,25 @@ def fmt_daily_report(
             f"*Confluence: {dir_emoji} {result.direction.value}*",
             f"  SL: {sl_str}  TP: {tp_str}",
         ]
+    return "\n".join(lines)
+
+
+def fmt_heartbeat(
+    symbol: str,
+    now: datetime,
+    next_event_types: list[str],
+    next_event_at: datetime,
+) -> str:
+    """Hourly heartbeat — confirms the daemon is still alive."""
+    next_str = ", ".join(next_event_types) if next_event_types else "unknown"
+    lines = [
+        "💓 *Novax FX Daemon — Heartbeat*",
+        "",
+        f"Symbol    : {symbol}",
+        f"Time      : {fmt_both(now)}",
+        f"Next event: *{next_str}*",
+        f"Fires at  : {next_event_at.strftime('%Y-%m-%d %H:%M UTC')}",
+    ]
     return "\n".join(lines)
 
 

@@ -16,6 +16,7 @@ Usage:
       [--lookback-15m 14] \\
       [--state-dir data/] \\
       [--log-file logs/daemon_XAUUSD.log]
+      [--score-threshold 50]
 
 Required env vars:
   TWELVEDATA_API_KEY   — never passed as a CLI arg or logged
@@ -40,27 +41,44 @@ from pathlib import Path
 from novax.data.ingest.twelvedata import fetch_bars
 from novax.engine import BarView, Position
 from novax.live import (
+    STATIC_WEIGHTS,
     AlertStateStore,
     EventScheduler,
     EventType,
     LevelStore,
     MultiTFScanner,
     MultiTFScanResult,
+    NewsGate,
     SignalRecord,
+    SignalStore,
+    StoredSignal,
     WeeklyLevel,
     compute_day_levels,
     compute_week_levels,
+    confidence_label,
     current_week_start,
     fmt_confluence_alert,
     fmt_daily_report,
+    fmt_heartbeat,
     fmt_market_close,
     fmt_market_open,
     fmt_session_open,
+    fmt_shutdown,
+    fmt_startup,
     fmt_weekly_report,
+    make_signal_id,
+    score_signal,
 )
 from novax.strategies.weekly_bos_retest import WeeklyBOSRetest
 
+HEARTBEAT_INTERVAL = timedelta(hours=1)
+
+# Minimum score to send a Telegram alert (50 = MEDIUM threshold)
+_ALERT_SCORE_THRESHOLD = 50
+
 _shutdown = threading.Event()
+
+_XAUUSD_PIP = 0.1
 
 
 def _handle_signal(signum: int, frame: object) -> None:  # noqa: ARG001
@@ -151,6 +169,21 @@ def _bos_state_from_h4(bars_h4: list) -> str:
     return bos.state.value if bos is not None else "idle"
 
 
+def _send_heartbeat(
+    *,
+    symbol: str,
+    now: datetime,
+    next_event_types: list[str],
+    next_event_at: datetime,
+    telegram_token: str,
+    telegram_chat_id: str,
+    log: logging.Logger,
+) -> None:
+    msg = fmt_heartbeat(symbol, now, next_event_types, next_event_at)
+    _send_telegram(telegram_token, telegram_chat_id, msg, log)
+    log.info("Heartbeat sent: %s", symbol)
+
+
 # ------------------------------------------------------------------
 # Event handlers
 # ------------------------------------------------------------------
@@ -164,6 +197,9 @@ def _handle_15m(
     scanner: MultiTFScanner,
     alert_store: AlertStateStore,
     level_store: LevelStore,
+    signal_store: SignalStore,
+    news_gate: NewsGate,
+    score_threshold: int,
     api_key: str,
     telegram_token: str,
     telegram_chat_id: str,
@@ -183,17 +219,52 @@ def _handle_15m(
     )
 
     result: MultiTFScanResult = scanner.scan(bars_h4, bars_h1, bars_m15)
-    log.info(
-        "[%s] 4H=%s 1H=%s 15M=%s conf=%s SL=%s TP=%s",
-        symbol,
-        result.h4.signal.value,
-        result.h1.signal.value,
-        result.m15.signal.value,
-        result.confluence,
-        f"{result.sl:.2f}" if result.sl is not None else "n/a",
-        f"{result.tp:.2f}" if result.tp is not None else "n/a",
-    )
 
+    # Score this scan
+    sc = score_signal(result, now,
+                      w_structure=STATIC_WEIGHTS.structure,
+                      w_momentum=STATIC_WEIGHTS.momentum,
+                      w_session=STATIC_WEIGHTS.session,
+                      w_cost=STATIC_WEIGHTS.cost)
+
+    # Historical confidence from the signal store
+    conf_pct, conf_n, conf_stored_label = signal_store.confidence(sc.total, regime="unknown")
+
+    # Derived risk metrics
+    rr: float | None = None
+    sl_pips: float | None = None
+    if result.entry_price is not None and result.sl is not None:
+        sl_pips = abs(result.entry_price - result.sl) / _XAUUSD_PIP
+        if result.tp is not None and sl_pips > 0:
+            tp_pips = abs(result.tp - result.entry_price) / _XAUUSD_PIP
+            rr = tp_pips / sl_pips
+
+    # Persist signal to DuckDB — always, regardless of confluence or score
+    sig = StoredSignal(
+        id=make_signal_id(symbol, now, "15m_scan"),
+        ts=now,
+        symbol=symbol,
+        source="15m_scan",
+        direction=result.direction.value if result.direction is not None else None,
+        h4_signal=result.h4.signal.value,
+        h1_signal=result.h1.signal.value,
+        m15_signal=result.m15.signal.value,
+        confluence=result.confluence,
+        entry_price=result.entry_price,
+        sl=result.sl,
+        tp=result.tp,
+        rr=rr,
+        sl_pips=sl_pips,
+        score=sc,
+        score_weights=STATIC_WEIGHTS,
+        confidence_pct=conf_pct,
+        confidence_n=conf_n,
+        confidence_label=conf_stored_label,
+        regime="unknown",
+    )
+    signal_store.insert(sig)
+
+    # Legacy JSONL store — kept for backward compatibility
     level_store.append_signal(
         SignalRecord(
             ts=now.isoformat(),
@@ -209,25 +280,61 @@ def _handle_15m(
         )
     )
 
-    if result.confluence:
-        state = alert_store.load()
-        if state.is_duplicate(result.direction.value, result.h4.last_bar_ts):
-            log.info(
-                "No alert: same signal already sent for this H4 bar (%s)",
-                result.h4.last_bar_ts,
-            )
-        else:
-            msg = fmt_confluence_alert(result)
-            _send_telegram(telegram_token, telegram_chat_id, msg, log)
-            state.update(result.direction.value, result.h4.last_bar_ts)
-            alert_store.save(state)
-            log.info("Alert sent: %s %s", symbol, result.direction.value)
-    else:
+    log.info(
+        "[%s] 4H=%s 1H=%s 15M=%s conf=%s score=%d[%s] SL=%s TP=%s conf_label=%s",
+        symbol,
+        result.h4.signal.value,
+        result.h1.signal.value,
+        result.m15.signal.value,
+        result.confluence,
+        sc.total,
+        sc.label,
+        f"{result.sl:.2f}" if result.sl is not None else "n/a",
+        f"{result.tp:.2f}" if result.tp is not None else "n/a",
+        conf_stored_label,
+    )
+
+    if not result.confluence:
         log.info(
             "No confluence — 4H=%s 1H=%s",
             result.h4.signal.value,
             result.h1.signal.value,
         )
+        return
+
+    # Score gate — low-confidence setups never reach Telegram
+    if sc.total < score_threshold:
+        log.info(
+            "No alert: score %d < threshold %d [%s]",
+            sc.total, score_threshold, sc.label,
+        )
+        return
+
+    # News gate — suppress during high-impact events
+    if news_gate.is_blocked(now):
+        log.info("No alert: signal blocked by news gate (%s %s)", symbol, now.strftime("%H:%M UTC"))
+        return
+
+    # Duplicate gate — one alert per H4 bar per direction
+    state = alert_store.load()
+    if state.is_duplicate(result.direction.value, result.h4.last_bar_ts):
+        log.info(
+            "No alert: same signal already sent for this H4 bar (%s)",
+            result.h4.last_bar_ts,
+        )
+        return
+
+    score_lines = (
+        f"\n\n*Signal Score: {sc.total}/100 [{sc.label}]*"
+        f"\n  structure={sc.structure}  momentum={sc.momentum}"
+        f"  session={sc.session}  cost={sc.cost}"
+        f"\n{confidence_label(conf_pct, conf_n)}"
+    )
+    msg = fmt_confluence_alert(result) + score_lines
+    _send_telegram(telegram_token, telegram_chat_id, msg, log)
+    state.update(result.direction.value, result.h4.last_bar_ts)
+    alert_store.save(state)
+    log.info("Alert sent: %s %s score=%d", symbol, result.direction.value, sc.total)
 
 
 def _handle_market_open(
@@ -252,7 +359,6 @@ def _handle_market_open(
         log.warning("market_open: no 4H bars returned")
         return
 
-    # Previous week = bars from 7–14 days ago
     prev_week_start = current_week_start(now) - timedelta(weeks=1)
     prev_week_end = current_week_start(now)
     prev_bars = [
@@ -446,6 +552,8 @@ def main() -> None:
     parser.add_argument("--lookback-15m", type=int, default=14)
     parser.add_argument("--state-dir", default="data/")
     parser.add_argument("--log-file", default=None)
+    parser.add_argument("--score-threshold", type=int, default=_ALERT_SCORE_THRESHOLD,
+                        help="Minimum signal score (0–100) required to send a Telegram alert")
     # H4 strategy params
     parser.add_argument("--ema-fast", type=int, default=20)
     parser.add_argument("--ema-slow", type=int, default=50)
@@ -477,8 +585,10 @@ def main() -> None:
     state_dir = Path(args.state_dir)
     state_dir.mkdir(parents=True, exist_ok=True)
 
-    alert_store = AlertStateStore(state_dir / f"alert_state_{symbol}.json")
-    level_store = LevelStore(state_dir / f"levels_{symbol}.jsonl")
+    alert_store  = AlertStateStore(state_dir / f"alert_state_{symbol}.json")
+    level_store  = LevelStore(state_dir / f"levels_{symbol}.jsonl")
+    signal_store = SignalStore(state_dir / f"signals_{symbol}.duckdb")
+    news_gate    = NewsGate(api_key=api_key)
     scanner = MultiTFScanner(
         symbol,
         h4_params={
@@ -493,8 +603,40 @@ def main() -> None:
 
     log.info("Daemon started (V2) — %s  state-dir=%s", symbol, state_dir)
 
+    # Send startup Telegram — first peek at the event queue for the message
+    first_fire, first_events = event_sched.next_events(datetime.now(tz=UTC))
+    _send_telegram(
+        telegram_token,
+        telegram_chat_id,
+        fmt_startup(
+            symbol=symbol,
+            state_dir=str(state_dir),
+            next_event_types=[e.value for e in first_events],
+            next_event_at=first_fire,
+        ),
+        log,
+    )
+    log.info("Startup notification sent: %s", symbol)
+
+    last_heartbeat = datetime.now(tz=UTC)
+
     while not _shutdown.is_set():
-        fire_at, events = event_sched.next_events(datetime.now(tz=UTC))
+        now = datetime.now(tz=UTC)
+        fire_at, events = event_sched.next_events(now)
+
+        # Hourly heartbeat — fires at the top of any loop iteration where it's due
+        if now - last_heartbeat >= HEARTBEAT_INTERVAL:
+            _send_heartbeat(
+                symbol=symbol,
+                now=now,
+                next_event_types=[e.value for e in events],
+                next_event_at=fire_at,
+                telegram_token=telegram_token,
+                telegram_chat_id=telegram_chat_id,
+                log=log,
+            )
+            last_heartbeat = now
+
         log.info(
             "Next event(s): %s at %s UTC",
             [e.value for e in events],
@@ -516,6 +658,9 @@ def main() -> None:
                         scanner=scanner,
                         alert_store=alert_store,
                         level_store=level_store,
+                        signal_store=signal_store,
+                        news_gate=news_gate,
+                        score_threshold=args.score_threshold,
                         api_key=api_key,
                         telegram_token=telegram_token,
                         telegram_chat_id=telegram_chat_id,
@@ -587,6 +732,13 @@ def main() -> None:
             except Exception:  # noqa: BLE001
                 log.exception("Event handler failed: %s", event.value)
 
+    # Clean shutdown — notify Telegram
+    _send_telegram(
+        telegram_token,
+        telegram_chat_id,
+        fmt_shutdown(symbol, datetime.now(tz=UTC)),
+        log,
+    )
     log.info("Daemon stopped.")
 
 
