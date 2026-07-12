@@ -296,8 +296,6 @@ class TestComputePerformanceMixed:
         assert report.last_trade_ts == ts3 + timedelta(hours=8)
 
     def test_metadata_propagated(self) -> None:
-        report = compute_performance(
-            [_make_trade(1.0)], symbol="EURUSD", timeframe="1h"
-        )
+        report = compute_performance([_make_trade(1.0)], symbol="EURUSD", timeframe="1h")
         assert report.symbol == "EURUSD"
         assert report.timeframe == "1h"

@@ -36,7 +36,7 @@ class TestWeeklyLevelAppendLoad:
         for i in range(5):
             store.append_level(
                 WeeklyLevel(
-                    week_start=f"2026-0{i+1}-01",
+                    week_start=f"2026-0{i + 1}-01",
                     symbol="XAUUSD",
                     prev_high=2700.0 + i,
                     prev_low=2600.0 + i,
@@ -85,9 +85,7 @@ class TestSignalRecordAppendLoad:
         assert loaded[0].entry_price == pytest.approx(2725.5)
 
     def test_level_and_signal_in_same_file(self, store: LevelStore) -> None:
-        store.append_level(
-            WeeklyLevel("2026-07-06", "XAUUSD", 2750.0, 2680.0, None, None, "ts")
-        )
+        store.append_level(WeeklyLevel("2026-07-06", "XAUUSD", 2750.0, 2680.0, None, None, "ts"))
         store.append_signal(
             SignalRecord(
                 "ts2", "XAUUSD", "SHORT", "FLAT", "SHORT", False, None, None, None, "daily"
@@ -104,9 +102,7 @@ class TestSignalRecordAppendLoad:
 
 class TestFileFormat:
     def test_each_record_is_one_line(self, store: LevelStore, tmp_path: Path) -> None:
-        store.append_level(
-            WeeklyLevel("2026-07-06", "XAUUSD", 2750.0, 2680.0, None, None, "ts")
-        )
+        store.append_level(WeeklyLevel("2026-07-06", "XAUUSD", 2750.0, 2680.0, None, None, "ts"))
         store.append_signal(
             SignalRecord(
                 "ts", "XAUUSD", "LONG", "LONG", "LONG", True, 2725.0, 2700.0, 2775.0, "15m_scan"
@@ -121,17 +117,17 @@ class TestFileFormat:
 
     def test_corrupt_lines_are_skipped(self, tmp_path: Path) -> None:
         path = tmp_path / "corrupt.jsonl"
-        path.write_text('{"_type": "level", "week_start": "2026-07-06", "symbol": "X", '
-                        '"prev_high": 1.0, "prev_low": 0.5, "week_high": null, '
-                        '"week_low": null, "recorded_at": "ts"}\n'
-                        'NOT JSON\n')
+        path.write_text(
+            '{"_type": "level", "week_start": "2026-07-06", "symbol": "X", '
+            '"prev_high": 1.0, "prev_low": 0.5, "week_high": null, '
+            '"week_low": null, "recorded_at": "ts"}\n'
+            "NOT JSON\n"
+        )
         s = LevelStore(path)
         levels = s.load_levels()
-        assert len(levels) == 1   # corrupt line silently skipped
+        assert len(levels) == 1  # corrupt line silently skipped
 
     def test_parent_dir_created_if_missing(self, tmp_path: Path) -> None:
         s = LevelStore(tmp_path / "subdir" / "nested" / "store.jsonl")
-        s.append_level(
-            WeeklyLevel("2026-07-06", "XAUUSD", 2750.0, 2680.0, None, None, "ts")
-        )
+        s.append_level(WeeklyLevel("2026-07-06", "XAUUSD", 2750.0, 2680.0, None, None, "ts"))
         assert (tmp_path / "subdir" / "nested" / "store.jsonl").exists()

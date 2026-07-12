@@ -20,29 +20,29 @@ __all__ = ["LevelStore", "SignalRecord", "WeeklyLevel"]
 class WeeklyLevel:
     """High/low levels for one trading week."""
 
-    week_start: str       # "YYYY-MM-DD" — Monday of the week
+    week_start: str  # "YYYY-MM-DD" — Monday of the week
     symbol: str
-    prev_high: float | None   # previous week's highest high
-    prev_low: float | None    # previous week's lowest low
-    week_high: float | None   # current week's highest high so far
-    week_low: float | None    # current week's lowest low so far
-    recorded_at: str          # ISO UTC datetime when this record was written
+    prev_high: float | None  # previous week's highest high
+    prev_low: float | None  # previous week's lowest low
+    week_high: float | None  # current week's highest high so far
+    week_low: float | None  # current week's lowest low so far
+    recorded_at: str  # ISO UTC datetime when this record was written
 
 
 @dataclass
 class SignalRecord:
     """One signal observation from the multi-TF scanner."""
 
-    ts: str               # ISO UTC datetime of the scan
+    ts: str  # ISO UTC datetime of the scan
     symbol: str
-    h4_signal: str        # LONG / SHORT / FLAT
+    h4_signal: str  # LONG / SHORT / FLAT
     h1_signal: str
     m15_signal: str
     confluence: bool
     entry_price: float | None
     sl: float | None
     tp: float | None
-    source: str           # "15m_scan" | "daily" | "weekly" | "market_open" …
+    source: str  # "15m_scan" | "daily" | "weekly" | "market_open" …
 
 
 class LevelStore:

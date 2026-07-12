@@ -423,9 +423,7 @@ class TestPersistence:
         assert t2.position.direction == "LONG"
         assert t2.position.entry_price == pytest.approx(2661.5)
 
-    def test_cumulative_pnl_persists_across_restart(
-        self, tmp_path: pytest.TempPathFactory
-    ) -> None:
+    def test_cumulative_pnl_persists_across_restart(self, tmp_path: pytest.TempPathFactory) -> None:
         path = tmp_path / "state.json"
         # First session: complete a trade
         t1 = PaperTrader(path)

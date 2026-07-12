@@ -81,6 +81,7 @@ class TestFmtBoth:
 class TestTehranZoneObject:
     def test_tehran_is_zoneinfo(self) -> None:
         from zoneinfo import ZoneInfo
+
         assert isinstance(TEHRAN, ZoneInfo)
 
     def test_offset_is_3h30(self) -> None:

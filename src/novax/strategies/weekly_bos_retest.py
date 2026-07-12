@@ -58,9 +58,7 @@ class WeeklyBOSRetest:
 
     def __post_init__(self) -> None:
         if self.ema_fast >= self.ema_slow:
-            raise ValueError(
-                f"ema_fast ({self.ema_fast}) must be < ema_slow ({self.ema_slow})"
-            )
+            raise ValueError(f"ema_fast ({self.ema_fast}) must be < ema_slow ({self.ema_slow})")
         if self.ob_buffer_pips <= 0:
             raise ValueError(f"ob_buffer_pips must be > 0, got {self.ob_buffer_pips}")
         if self.max_risk_pips <= 0:

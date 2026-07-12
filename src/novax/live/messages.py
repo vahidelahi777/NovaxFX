@@ -31,11 +31,7 @@ def fmt_confluence_alert(result: MultiTFScanResult) -> str:
     tp_str = f"{result.tp:,.2f}" if result.tp is not None else "n/a"
 
     rr_str = "n/a"
-    if (
-        result.sl is not None
-        and result.tp is not None
-        and result.entry_price is not None
-    ):
+    if result.sl is not None and result.tp is not None and result.entry_price is not None:
         risk = abs(result.entry_price - result.sl)
         reward = abs(result.tp - result.entry_price)
         if risk > 0:
@@ -152,8 +148,7 @@ def fmt_weekly_report(
     if current_week is not None:
         rng = current_week.high - current_week.low
         lines += [
-            f"Week H/L : {current_week.high:,.2f} / {current_week.low:,.2f}"
-            f"  (range ${rng:.2f})",
+            f"Week H/L : {current_week.high:,.2f} / {current_week.low:,.2f}  (range ${rng:.2f})",
         ]
     lines += [
         f"Last close: {last_close:,.2f}",
@@ -215,8 +210,7 @@ def fmt_daily_report(
     if day_levels is not None:
         rng = day_levels.high - day_levels.low
         lines += [
-            f"Today H/L : {day_levels.high:,.2f} / {day_levels.low:,.2f}"
-            f"  (range ${rng:.2f})",
+            f"Today H/L : {day_levels.high:,.2f} / {day_levels.low:,.2f}  (range ${rng:.2f})",
         ]
     lines += [
         f"Last close: {result.h4.last_close:,.2f}",
@@ -240,6 +234,7 @@ def fmt_daily_report(
 # ------------------------------------------------------------------
 # Internal helpers
 # ------------------------------------------------------------------
+
 
 def _signal_emoji(sig: Signal) -> str:
     if sig == Signal.LONG:

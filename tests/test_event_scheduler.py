@@ -21,7 +21,7 @@ def _utc(
 class TestNextSingleWeekday:
     def test_sunday_market_open_from_saturday(self) -> None:
         # Saturday 10:00 → next Sunday 22:00
-        now = _utc(2026, 7, 11, 10, 0)   # Saturday
+        now = _utc(2026, 7, 11, 10, 0)  # Saturday
         result = _next_single_weekday(now, 6, 22, 0)
         assert result == _utc(2026, 7, 12, 22, 0)
 
@@ -38,7 +38,7 @@ class TestNextSingleWeekday:
         assert result == _utc(2026, 7, 19, 22, 0)
 
     def test_friday_market_close_from_thursday(self) -> None:
-        now = _utc(2026, 7, 9, 12, 0)   # Thursday
+        now = _utc(2026, 7, 9, 12, 0)  # Thursday
         result = _next_single_weekday(now, 4, 21, 0)
         assert result == _utc(2026, 7, 10, 21, 0)
 
@@ -56,25 +56,25 @@ class TestNextSingleWeekday:
 class TestNextBusinessDayTime:
     def test_monday_08_from_monday_07(self) -> None:
         # Monday 07:00 → Monday 08:00
-        now = _utc(2026, 7, 6, 7, 0)   # Monday
+        now = _utc(2026, 7, 6, 7, 0)  # Monday
         result = _next_business_day_time(now, 8, 0)
         assert result == _utc(2026, 7, 6, 8, 0)
 
     def test_friday_after_time_skips_to_monday(self) -> None:
         # Friday 20:30 → Monday 08:00 (skips weekend)
-        now = _utc(2026, 7, 10, 20, 30)   # Friday
+        now = _utc(2026, 7, 10, 20, 30)  # Friday
         result = _next_business_day_time(now, 8, 0)
-        assert result == _utc(2026, 7, 13, 8, 0)   # Monday
+        assert result == _utc(2026, 7, 13, 8, 0)  # Monday
 
     def test_saturday_skips_to_monday(self) -> None:
-        now = _utc(2026, 7, 11, 5, 0)   # Saturday
+        now = _utc(2026, 7, 11, 5, 0)  # Saturday
         result = _next_business_day_time(now, 8, 0)
-        assert result == _utc(2026, 7, 13, 8, 0)   # Monday
+        assert result == _utc(2026, 7, 13, 8, 0)  # Monday
 
     def test_sunday_skips_to_monday(self) -> None:
-        now = _utc(2026, 7, 12, 10, 0)   # Sunday
+        now = _utc(2026, 7, 12, 10, 0)  # Sunday
         result = _next_business_day_time(now, 13, 0)
-        assert result == _utc(2026, 7, 13, 13, 0)   # Monday
+        assert result == _utc(2026, 7, 13, 13, 0)  # Monday
 
     def test_result_always_strictly_after_now(self) -> None:
         base = _utc(2026, 7, 6, 0, 0)
@@ -115,14 +115,14 @@ class TestEventSchedulerReturnType:
 class TestEventSchedulerCalendarFiring:
     def test_15m_fires_when_nearest(self) -> None:
         # Midweek, mid-hour — 15M bar close is always nearest
-        now = _utc(2026, 7, 8, 9, 7)   # Wednesday 09:07 → next 15M at 09:15
+        now = _utc(2026, 7, 8, 9, 7)  # Wednesday 09:07 → next 15M at 09:15
         fire_at, events = EventScheduler().next_events(now)
         assert EventType.BAR_CLOSE_15M in events
         assert fire_at == _utc(2026, 7, 8, 9, 15)
 
     def test_market_open_fires_sunday_22(self) -> None:
         # Just before Sunday 22:00 → market open is nearest
-        now = _utc(2026, 7, 12, 21, 59, 30)   # Sunday 21:59:30
+        now = _utc(2026, 7, 12, 21, 59, 30)  # Sunday 21:59:30
         fire_at, events = EventScheduler().next_events(now)
         # 15M next close is 22:00 which ties with MARKET_OPEN
         assert EventType.MARKET_OPEN in events
@@ -130,7 +130,7 @@ class TestEventSchedulerCalendarFiring:
 
     def test_market_close_and_weekly_report_fire_together(self) -> None:
         # Just before Friday 21:00
-        now = _utc(2026, 7, 10, 20, 59, 30)   # Friday 20:59:30
+        now = _utc(2026, 7, 10, 20, 59, 30)  # Friday 20:59:30
         fire_at, events = EventScheduler().next_events(now)
         # Could be DAILY_REPORT at 20:00? No, 20:00 is in the past.
         # Actually at 20:59:30, next events:
@@ -142,7 +142,7 @@ class TestEventSchedulerCalendarFiring:
 
     def test_london_open_fires_weekday_0800(self) -> None:
         # Just before Monday 08:00
-        now = _utc(2026, 7, 6, 7, 59, 30)   # Monday 07:59:30
+        now = _utc(2026, 7, 6, 7, 59, 30)  # Monday 07:59:30
         fire_at, events = EventScheduler().next_events(now)
         assert fire_at == _utc(2026, 7, 6, 8, 0)
         assert EventType.LONDON_OPEN in events

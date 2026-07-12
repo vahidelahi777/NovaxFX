@@ -14,7 +14,7 @@ __all__ = ["BarLevels", "compute_day_levels", "compute_week_levels", "current_we
 class BarLevels:
     """Highest high and lowest low across a set of bars."""
 
-    label: str        # e.g. "2026-07-14" or "2026-07-07/2026-07-11"
+    label: str  # e.g. "2026-07-14" or "2026-07-07/2026-07-11"
     high: float
     low: float
     bar_count: int

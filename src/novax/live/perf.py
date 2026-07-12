@@ -23,12 +23,12 @@ class PerformanceReport:
     timeframe: str
     trade_count: int
     win_count: int
-    win_rate: float          # [0, 1]; nan when trade_count == 0
+    win_rate: float  # [0, 1]; nan when trade_count == 0
     total_pnl: float
-    avg_pnl: float           # nan when trade_count == 0
-    profit_factor: float     # sum_wins / abs(sum_losses); inf when no losses; nan when no trades
+    avg_pnl: float  # nan when trade_count == 0
+    profit_factor: float  # sum_wins / abs(sum_losses); inf when no losses; nan when no trades
     max_drawdown_abs: float  # max peak-to-trough on cumulative per-trade equity
-    sharpe_ratio: float      # mean(pnl) / sample_std(pnl); nan when fewer than 2 trades
+    sharpe_ratio: float  # mean(pnl) / sample_std(pnl); nan when fewer than 2 trades
     exit_counts: dict[str, int]
     first_trade_ts: datetime | None
     last_trade_ts: datetime | None

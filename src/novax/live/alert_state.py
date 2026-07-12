@@ -16,7 +16,7 @@ class AlertState:
     """Last-sent alert direction and the H4 bar that triggered it."""
 
     direction: str = "FLAT"  # "LONG" | "SHORT" | "FLAT"
-    h4_bar_ts: str = ""      # ISO8601 of the H4 bar ts
+    h4_bar_ts: str = ""  # ISO8601 of the H4 bar ts
 
     def is_duplicate(self, direction: str, h4_bar_ts: datetime) -> bool:
         """Return True if this exact alert was already sent."""

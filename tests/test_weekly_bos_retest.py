@@ -212,11 +212,17 @@ def test_bos_up_sets_sl_and_tp() -> None:
 
 def test_bos_up_no_ob_returns_flat() -> None:
     strat = WeeklyBOSRetest()
-    _patch(strat, bos=BOSResult(
-        state=BOSState.BOS_UP, bos_level=2600.0,
-        ob_high=math.nan, ob_low=math.nan,
-        choch_bearish=False, choch_bullish=False,
-    ))
+    _patch(
+        strat,
+        bos=BOSResult(
+            state=BOSState.BOS_UP,
+            bos_level=2600.0,
+            ob_high=math.nan,
+            ob_low=math.nan,
+            choch_bearish=False,
+            choch_bullish=False,
+        ),
+    )
     bar = make_bar(WEEK1_MON, 2610.0, 2611.0, 2606.0, 2609.0)
     assert strat.on_bar(make_view(bar), flat_pos()) == Signal.FLAT
 
@@ -275,8 +281,14 @@ def test_bos_up_risk_too_wide_blocks_entry() -> None:
 
 def test_bos_down_full_conditions_returns_short() -> None:
     strat = WeeklyBOSRetest()
-    _patch(strat, fast=0.9, slow=1.0, tsi=-30.0, tsi_sig=-10.0,
-           bos=_bos_down(ob_high=2630.0, ob_low=2625.0))
+    _patch(
+        strat,
+        fast=0.9,
+        slow=1.0,
+        tsi=-30.0,
+        tsi_sig=-10.0,
+        bos=_bos_down(ob_high=2630.0, ob_low=2625.0),
+    )
     # bar rallies into OB (high≥ob_low) but closes inside/below (close≤ob_high)
     bar = make_bar(WEEK1_MON, 2622.0, 2628.0, 2621.0, 2626.0)
     assert strat.on_bar(make_view(bar), flat_pos()) == Signal.SHORT
@@ -284,8 +296,14 @@ def test_bos_down_full_conditions_returns_short() -> None:
 
 def test_bos_down_sets_sl_and_tp() -> None:
     strat = WeeklyBOSRetest(ob_buffer_pips=5.0, risk_reward=2.0, pip_size=0.1)
-    _patch(strat, fast=0.9, slow=1.0, tsi=-30.0, tsi_sig=-10.0,
-           bos=_bos_down(ob_high=2630.0, ob_low=2625.0))
+    _patch(
+        strat,
+        fast=0.9,
+        slow=1.0,
+        tsi=-30.0,
+        tsi_sig=-10.0,
+        bos=_bos_down(ob_high=2630.0, ob_low=2625.0),
+    )
     bar = make_bar(WEEK1_MON, 2622.0, 2628.0, 2621.0, 2626.0)
     strat.on_bar(make_view(bar), flat_pos())
     # sl = ob_high + buffer = 2630 + 0.5 = 2630.5; risk = 2630.5 - 2626 = 4.5; tp = 2626 - 9 = 2617
@@ -295,8 +313,7 @@ def test_bos_down_sets_sl_and_tp() -> None:
 
 def test_bos_down_choch_bullish_disqualifies() -> None:
     strat = WeeklyBOSRetest()
-    _patch(strat, fast=0.9, slow=1.0, tsi=-30.0, tsi_sig=-10.0,
-           bos=_bos_down(choch_bullish=True))
+    _patch(strat, fast=0.9, slow=1.0, tsi=-30.0, tsi_sig=-10.0, bos=_bos_down(choch_bullish=True))
     bar = make_bar(WEEK1_MON, 2622.0, 2628.0, 2621.0, 2626.0)
     assert strat.on_bar(make_view(bar), flat_pos()) == Signal.FLAT
 

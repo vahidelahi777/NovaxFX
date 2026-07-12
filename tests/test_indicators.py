@@ -88,7 +88,7 @@ class TestEMAIndicator:
         ema.update(1.0)
         ema.update(2.0)
         assert ema.update(None) is None  # None skipped — count stays at 2
-        result = ema.update(3.0)         # this is the 3rd real value
+        result = ema.update(3.0)  # this is the 3rd real value
         assert result == pytest.approx(2.25)
 
     def test_value_property_matches_update_return(self) -> None:
@@ -140,7 +140,7 @@ class TestRMAIndicator:
         rma = RMAIndicator(period=2)
         rma.update(1.0)
         assert rma.update(None) is None  # still in warm-up, None skipped
-        result = rma.update(3.0)         # 2nd real value → seed = (1+3)/2 = 2.0
+        result = rma.update(3.0)  # 2nd real value → seed = (1+3)/2 = 2.0
         assert result == pytest.approx(2.0)
 
     def test_rma_differs_from_ema_for_same_period(self) -> None:
@@ -386,9 +386,7 @@ class TestPivotZoneDetector:
         )
 
     def test_nearby_pivots_merge(self) -> None:
-        det = PivotZoneDetector(
-            pip_size=0.0001, left_bars=2, right_bars=2, zone_merge_pips=200.0
-        )
+        det = PivotZoneDetector(pip_size=0.0001, left_bars=2, right_bars=2, zone_merge_pips=200.0)
         # Two resistance pivots very close together (within merge distance)
         for bar in self._bars_from_highs([1.0, 2.0, 3.000, 2.0, 1.0]):
             det.update(bar)

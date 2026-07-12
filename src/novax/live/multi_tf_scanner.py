@@ -20,12 +20,12 @@ _M15_DEFAULTS: dict[str, Any] = {"fast": 9, "slow": 21}
 
 @dataclass(frozen=True)
 class TFSignal:
-    timeframe: str        # "4h" | "1h" | "15min"
-    signal: Signal        # LONG | SHORT | FLAT
-    last_bar_ts: datetime # ts of the last bar used
-    last_close: float     # close price of the last bar
-    sl: float | None      # SL price — only set by WeeklyBOSRetest on 4H
-    tp: float | None      # TP price — only set by WeeklyBOSRetest on 4H
+    timeframe: str  # "4h" | "1h" | "15min"
+    signal: Signal  # LONG | SHORT | FLAT
+    last_bar_ts: datetime  # ts of the last bar used
+    last_close: float  # close price of the last bar
+    sl: float | None  # SL price — only set by WeeklyBOSRetest on 4H
+    tp: float | None  # TP price — only set by WeeklyBOSRetest on 4H
     n_bars_used: int
 
 
@@ -35,12 +35,12 @@ class MultiTFScanResult:
     h4: TFSignal
     h1: TFSignal
     m15: TFSignal
-    confluence: bool          # h4 != FLAT and h1.signal == h4.signal
-    direction: Signal         # h4.signal when confluence else FLAT
-    entry_price: float | None # h4 last_close when confluence else None
-    sl: float | None          # from h4 (WeeklyBOSRetest internal)
-    tp: float | None          # from h4 (WeeklyBOSRetest internal)
-    scanned_at: datetime      # UTC timestamp of the scan
+    confluence: bool  # h4 != FLAT and h1.signal == h4.signal
+    direction: Signal  # h4.signal when confluence else FLAT
+    entry_price: float | None  # h4 last_close when confluence else None
+    sl: float | None  # from h4 (WeeklyBOSRetest internal)
+    tp: float | None  # from h4 (WeeklyBOSRetest internal)
+    scanned_at: datetime  # UTC timestamp of the scan
 
 
 def _flat_signal(timeframe: str, ts: datetime, close: float) -> TFSignal:

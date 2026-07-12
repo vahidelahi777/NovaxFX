@@ -197,9 +197,7 @@ class TestFetchBarsHappyPath:
         ]
         payload = {"values": xau_values, "status": "ok"}
         with _patched(payload):
-            bars = fetch_bars(
-                "XAU/USD", _INTERVAL, _START, _END, _API_KEY, nominal_spread_pips=2.0
-            )
+            bars = fetch_bars("XAU/USD", _INTERVAL, _START, _END, _API_KEY, nominal_spread_pips=2.0)
         assert len(bars) == 1
         # XAU/USD pip_size = 0.1 → 2 pips spread = 0.2
         assert bars[0].spread == pytest.approx(0.2)

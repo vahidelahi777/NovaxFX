@@ -73,9 +73,7 @@ class GoldPullback:
 
     def __post_init__(self) -> None:
         if self.ema_fast >= self.ema_slow:
-            raise ValueError(
-                f"ema_fast ({self.ema_fast}) must be < ema_slow ({self.ema_slow})"
-            )
+            raise ValueError(f"ema_fast ({self.ema_fast}) must be < ema_slow ({self.ema_slow})")
         if self.zone_entry_pips <= 0:
             raise ValueError(f"zone_entry_pips must be > 0, got {self.zone_entry_pips}")
         self._ema_fast_ind = EMAIndicator(self.ema_fast)

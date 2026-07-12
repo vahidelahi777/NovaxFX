@@ -36,9 +36,7 @@ def _h4_bars(closes: list[float], *, week_offset: int = 0) -> list[Bar]:
     bars = []
     for i, c in enumerate(closes):
         ts = week_start + timedelta(hours=4 * i)
-        bars.append(
-            _bar(ts, open_=c - 1.0, high=c + 1.0, low=c - 1.0, close=c)
-        )
+        bars.append(_bar(ts, open_=c - 1.0, high=c + 1.0, low=c - 1.0, close=c))
     return bars
 
 

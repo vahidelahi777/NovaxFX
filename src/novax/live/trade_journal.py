@@ -20,16 +20,16 @@ __all__ = ["CompletedTrade", "TradeJournal"]
 @dataclass(frozen=True)
 class CompletedTrade:
     symbol: str
-    direction: str          # "LONG" | "SHORT"
-    entry_ts: datetime      # tz-aware UTC
-    exit_ts: datetime       # tz-aware UTC
+    direction: str  # "LONG" | "SHORT"
+    entry_ts: datetime  # tz-aware UTC
+    exit_ts: datetime  # tz-aware UTC
     entry_price: float
     exit_price: float
     sl_at_entry: float | None
     tp_at_entry: float | None
-    exit_kind: str          # "EXIT_TP" | "EXIT_SL" | "EXIT_SIGNAL"
+    exit_kind: str  # "EXIT_TP" | "EXIT_SL" | "EXIT_SIGNAL"
     pnl: float
-    n_bars_held: int        # round((exit_ts - entry_ts).total_seconds() / 14400)
+    n_bars_held: int  # round((exit_ts - entry_ts).total_seconds() / 14400)
 
 
 def _to_dict(trade: CompletedTrade) -> dict[str, Any]:
