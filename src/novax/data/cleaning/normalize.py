@@ -15,7 +15,9 @@ from datetime import datetime
 from ...data_sources import Bar
 from ..ingest.dukascopy import RawTick
 
-__all__ = ["ticks_to_1m_bars"]
+_MINUTES_PER_DAY = 1440
+
+__all__ = ["ticks_to_1m_bars", "resample_bars"]
 
 
 def ticks_to_1m_bars(ticks: Sequence[RawTick], *, symbol: str = "unknown") -> list[Bar]:
@@ -81,3 +83,59 @@ def ticks_to_1m_bars(ticks: Sequence[RawTick], *, symbol: str = "unknown") -> li
             )
         )
     return bars
+
+
+def resample_bars(bars: Sequence[Bar], interval_minutes: int) -> list[Bar]:
+    """Aggregate bars to a coarser timeframe.
+
+    Groups input bars into buckets of ``interval_minutes`` width and builds one
+    OHLCV bar per bucket (open = first, high = max, low = min, close = last,
+    volume = sum). ``interval_minutes`` must evenly divide 1440 (minutes per day).
+
+    Raises:
+        ValueError: If ``interval_minutes`` does not divide 1440 exactly.
+    """
+    if _MINUTES_PER_DAY % interval_minutes != 0:
+        raise ValueError(
+            f"interval_minutes={interval_minutes} does not evenly divide {_MINUTES_PER_DAY}"
+        )
+    if not bars:
+        return []
+
+    def _floor(ts: datetime) -> datetime:
+        total_min = ts.hour * 60 + ts.minute
+        floored = (total_min // interval_minutes) * interval_minutes
+        return ts.replace(
+            hour=floored // 60,
+            minute=floored % 60,
+            second=0,
+            microsecond=0,
+        )
+
+    groups: dict[datetime, list[Bar]] = {}
+    for bar in bars:
+        key = _floor(bar.ts)
+        groups.setdefault(key, []).append(bar)
+
+    result: list[Bar] = []
+    for key in sorted(groups):
+        g = groups[key]
+        first, last = g[0], g[-1]
+        bid = last.bid if last.bid is not None else None
+        ask = last.ask if last.ask is not None else None
+        spread = (ask - bid) if (ask is not None and bid is not None) else last.spread
+        result.append(
+            Bar(
+                ts=key,
+                open=first.open,
+                high=max(b.high for b in g),
+                low=min(b.low for b in g),
+                close=last.close,
+                volume=sum(b.volume for b in g),
+                bid=bid,
+                ask=ask,
+                spread=spread,
+                source="resampled",
+            )
+        )
+    return result

@@ -25,10 +25,11 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from novax.data.cleaning.normalize import ticks_to_1m_bars
+from novax.data.cleaning.normalize import resample_bars, ticks_to_1m_bars
 from novax.data.cleaning.validation import validate_day
 from novax.data.ingest.dukascopy import fetch_day_ticks
 from novax.data.storage.parquet_store import ParquetStore
+from novax.data_sources import Bar
 
 
 def _parse_date(s: str) -> datetime:
@@ -79,6 +80,14 @@ def main() -> None:
         default=0.3,
         help="Seconds to sleep between hourly requests to avoid rate-limiting (default: 0.3)",
     )
+    parser.add_argument(
+        "--resample-to",
+        default="",
+        help=(
+            "Comma-separated additional timeframes to write after ingestion "
+            "(e.g. 15m,1h).  Supported: 1m 5m 15m 30m 1h 4h"
+        ),
+    )
     args = parser.parse_args()
 
     start = _parse_date(args.start)
@@ -97,6 +106,7 @@ def main() -> None:
     ok_days = 0
     skipped_days = 0
     failed_days = 0
+    all_bars: list[Bar] = []
 
     for day in days:
         label = day.strftime("%Y-%m-%d")
@@ -135,7 +145,7 @@ def main() -> None:
             for w in report.warnings:
                 print(f"  [{label}] WARN: {w}")
 
-        store.write_bars(symbol, args.timeframe, bars)
+        all_bars.extend(bars)
         print(
             f"  [{label}] OK — {report.ticks_fetched} ticks, "
             f"{report.bars_generated} bars, {report.hours_with_data}h with data"
@@ -146,6 +156,26 @@ def main() -> None:
         f"\nDone: {ok_days} written, {skipped_days} skipped, {failed_days} errors "
         f"out of {len(days)} days."
     )
+
+    # --- Write primary timeframe bars (accumulated to avoid per-day overwrite) ---
+    if all_bars:
+        store.write_bars(symbol, args.timeframe, all_bars)
+        print(f"Wrote {len(all_bars)} {args.timeframe} bars to {root}")
+
+        # --- Resample to additional timeframes ---
+        _TF_MINUTES = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240}
+        for tf_raw in args.resample_to.split(","):
+            tf = tf_raw.strip()
+            if not tf:
+                continue
+            if tf not in _TF_MINUTES:
+                print(f"ERROR: unknown resample timeframe {tf!r}", file=sys.stderr)
+                sys.exit(1)
+            resampled = resample_bars(all_bars, _TF_MINUTES[tf])
+            if resampled:
+                store.write_bars(symbol, tf, resampled)
+                print(f"Resampled: {len(resampled)} {tf} bars written to {root}")
+
     if failed_days > 0:
         sys.exit(1)
 
