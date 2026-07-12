@@ -102,7 +102,8 @@ def main() -> None:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"\nIngesting {inst.symbol}  |  {args.interval} ({timeframe})  |  {args.start} → {args.end}")
+    print(f"\nIngesting {inst.symbol}  |  {args.interval} ({timeframe})"
+          f"  |  {args.start} → {args.end}")
     print(f"Output root: {args.output_dir}\n")
 
     bars = fetch_bars(

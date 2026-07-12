@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  prod-daemon:
+    build: .
+    container_name: novax-prod-daemon
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    command: >
+      python scripts/prod_daemon_xauusd.py
+      --symbol XAUUSD
+      --state-dir data/
+      --log-file logs/daemon_XAUUSD.log
+
+  weekly-analysis:
+    build: .
+    container_name: novax-weekly-analysis
+    profiles: ["weekly"]
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    command: python scripts/weekly_analysis.py --symbol XAUUSD
+    restart: "no"
