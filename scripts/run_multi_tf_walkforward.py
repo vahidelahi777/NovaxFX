@@ -345,7 +345,7 @@ def main() -> None:
     print("\nLoading bars …")
     bars_h4  = load_bars(root, symbol, "4h",   start, end)
     bars_h1  = load_bars(root, symbol, "1h",   start, end)
-    bars_m15 = load_bars(root, symbol, "15min", start, end)
+    bars_m15 = load_bars(root, symbol, "15m", start, end)
 
     missing: list[str] = []
     if not bars_h4:
@@ -353,15 +353,17 @@ def main() -> None:
     if not bars_h1:
         missing.append("1h")
     if not bars_m15:
-        missing.append("15min")
+        missing.append("15m")
 
+    _TF_TO_TD_INTERVAL = {"4h": "4h", "1h": "1h", "15m": "15min", "1m": "1min"}
     if missing:
         print(f"\nERROR: Missing data for timeframe(s): {missing}", file=sys.stderr)
         print("\nIngest the missing timeframes with TwelveData:", file=sys.stderr)
         for tf in missing:
+            td_interval = _TF_TO_TD_INTERVAL.get(tf, tf)
             print(
                 f"  .venv/bin/python scripts/ingest_twelvedata.py \\\n"
-                f"      --symbol {symbol} --interval {tf} \\\n"
+                f"      --symbol {symbol} --interval {td_interval} \\\n"
                 f"      --start {args.start} --end {args.end} \\\n"
                 f"      --output-dir {args.data_dir}",
                 file=sys.stderr,
