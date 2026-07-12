@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .atr import ATRIndicator
 from .bos import BOSDetector, BOSResult, BOSState
 from .ema import EMAIndicator, RMAIndicator
 from .pivot_zones import PivotZone, PivotZoneDetector
@@ -10,6 +11,7 @@ from .tsi import TSIIndicator, TSIResult
 from .weekly_levels import WeeklyLevels, WeeklyLevelTracker
 
 __all__ = [
+    "ATRIndicator",
     "BOSDetector",
     "BOSResult",
     "BOSState",
