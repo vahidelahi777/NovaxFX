@@ -18,6 +18,8 @@ __all__ = [
     "fmt_market_close",
     "fmt_market_open",
     "fmt_session_open",
+    "fmt_startup",
+    "fmt_shutdown",
     "fmt_weekly_report",
 ]
 
@@ -228,6 +230,40 @@ def fmt_daily_report(
             f"*Confluence: {dir_emoji} {result.direction.value}*",
             f"  SL: {sl_str}  TP: {tp_str}",
         ]
+    return "\n".join(lines)
+
+
+def fmt_startup(
+    symbol: str,
+    state_dir: str,
+    next_event_types: list[str],
+    next_event_at: datetime,
+) -> str:
+    """Sent once at daemon startup — confirms the container is alive."""
+    next_str = ", ".join(next_event_types) if next_event_types else "unknown"
+    lines = [
+        "🟢 *Novax FX Daemon — STARTED*",
+        "",
+        f"Symbol    : {symbol}",
+        f"Time      : {fmt_both(next_event_at)}",
+        f"State dir : {state_dir}",
+        "",
+        f"Next event: *{next_str}*",
+        f"Fires at  : {next_event_at.strftime('%Y-%m-%d %H:%M UTC')}",
+    ]
+    return "\n".join(lines)
+
+
+def fmt_shutdown(symbol: str, now: datetime) -> str:
+    """Sent on clean SIGTERM / SIGINT shutdown."""
+    lines = [
+        "🔴 *Novax FX Daemon — STOPPED*",
+        "",
+        f"Symbol : {symbol}",
+        f"Time   : {fmt_both(now)}",
+        "",
+        "Daemon received shutdown signal and exited cleanly.",
+    ]
     return "\n".join(lines)
 
 

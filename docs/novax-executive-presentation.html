@@ -782,7 +782,140 @@
     </div>
   </div>
 
-  <!-- ══════════════════════════════════════════════ SLIDE 9: LIMITATIONS -->
+  <!-- ══════════════════════════════════════════════ SLIDE 9: WORLD BENCHMARKS -->
+  <div class="slide">
+    <h2>vs. the <span class="accent">World's Best</span> Platforms</h2>
+    <p style="font-size:.8rem;color:var(--muted);margin-bottom:16px;align-self:flex-start">Bloomberg · TradingView · QuantConnect · MetaTrader 5 · Trade Ideas · Alpaca</p>
+    <table style="font-size:.75rem">
+      <thead>
+        <tr>
+          <th>Capability</th>
+          <th>Bloomberg</th>
+          <th>TradingView</th>
+          <th>QuantConnect</th>
+          <th>Trade Ideas</th>
+          <th style="color:var(--gold)">Novax FX</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Deflated Sharpe (auto)</strong></td><td class="vs-lose">✗</td><td class="vs-lose">✗</td><td class="vs-lose">✗</td><td class="vs-lose">✗</td><td class="vs-win" style="color:var(--gold)"><strong>✓ Unique</strong></td></tr>
+        <tr><td><strong>Out-of-sample lockbox</strong></td><td class="vs-lose">✗</td><td class="vs-lose">✗</td><td class="vs-lose">✗</td><td class="vs-lose">✗</td><td class="vs-win" style="color:var(--gold)"><strong>✓ Unique</strong></td></tr>
+        <tr><td><strong>Tamper-proof artifact trail</strong></td><td class="vs-lose">✗</td><td class="vs-lose">✗</td><td class="vs-lose">✗</td><td class="vs-lose">✗</td><td class="vs-win" style="color:var(--gold)"><strong>✓ Unique</strong></td></tr>
+        <tr><td>Real-time streaming (WebSocket)</td><td class="vs-win">✓</td><td class="vs-win">✓</td><td class="vs-win">✓</td><td class="vs-win">✓</td><td class="vs-lose">✗ polling</td></tr>
+        <tr><td>Professional chart UI</td><td class="vs-win">✓</td><td class="vs-win">✓ best</td><td class="vs-win">✓</td><td class="vs-win">✓</td><td class="vs-lose">✗ planned</td></tr>
+        <tr><td>Risk engine (kill switch)</td><td class="vs-win">✓</td><td class="vs-lose">✗</td><td class="vs-lose">✗</td><td class="vs-lose">✗</td><td class="vs-lose">✗ planned P3</td></tr>
+        <tr><td>Signal score / explainability</td><td class="vs-win">✓</td><td class="vs-lose">✗</td><td class="vs-lose">✗</td><td class="vs-win">✓ Holly AI</td><td class="vs-lose">✗ planned P2</td></tr>
+        <tr><td>Economic calendar / news gate</td><td class="vs-win">✓</td><td class="vs-win">✓</td><td class="vs-lose">✗</td><td class="vs-win">✓</td><td class="vs-lose">✗ planned</td></tr>
+        <tr><td>Regime detection</td><td class="vs-win">✓</td><td class="vs-lose">✗</td><td class="vs-lose">✗</td><td class="vs-win">✓</td><td class="vs-lose">✗ planned</td></tr>
+        <tr><td>Multi-broker execution</td><td class="vs-win">✓</td><td class="vs-win">✓</td><td class="vs-win">✓</td><td class="vs-win">✓</td><td class="vs-lose">✗ planned P6</td></tr>
+        <tr><td>Mobile app</td><td class="vs-win">✓</td><td class="vs-win">✓</td><td class="vs-win">✓</td><td class="vs-win">✓</td><td class="vs-lose">✗ not yet</td></tr>
+        <tr><td>Pessimistic cost model</td><td class="dot-plan">manual</td><td class="vs-lose">✗</td><td class="dot-plan">configurable</td><td class="vs-lose">✗</td><td class="vs-win">✓ built-in</td></tr>
+        <tr><td>Walk-forward + lockbox</td><td class="vs-lose">✗</td><td class="vs-lose">✗</td><td class="dot-plan">manual</td><td class="vs-lose">✗</td><td class="vs-win">✓ enforced</td></tr>
+        <tr><td>Self-hosted (no vendor lock-in)</td><td class="vs-lose">✗</td><td class="vs-lose">✗</td><td class="vs-lose">✗</td><td class="vs-lose">✗</td><td class="vs-win">✓</td></tr>
+      </tbody>
+    </table>
+    <div class="highlight" style="margin-top:14px;font-size:.8rem">
+      <strong>The score:</strong> Novax leads in research integrity (3 unique capabilities). Novax trails in UX, real-time data, and execution.
+      Those gaps are <em>buildable</em>. The research integrity moat is structural and <em>not copyable without architectural commitment</em>.
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ SLIDE 10: FEATURES TO WIN -->
+  <div class="slide">
+    <h2>Features to <span class="accent">Win</span></h2>
+    <p style="font-size:.8rem;color:var(--muted);margin-bottom:18px;align-self:flex-start">Prioritised gap-closure roadmap — what it takes to be the best platform in the world</p>
+    <div class="grid g3" style="align-items:start;gap:14px">
+      <div>
+        <div style="font-size:.68rem;text-transform:uppercase;letter-spacing:.12em;color:var(--red);margin-bottom:10px;font-weight:700">🔴 Tier 1 — Must Have (0–6 months)</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--red)">
+            <div class="card-title">Real-time WebSocket stream</div>
+            <div class="card-desc">Replace polling — latency kills signal quality</div>
+          </div>
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--red)">
+            <div class="card-title">Risk engine + kill switch</div>
+            <div class="card-desc">Cannot automate anything without it — gate blocks P5</div>
+          </div>
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--red)">
+            <div class="card-title">Signal score 0–100</div>
+            <div class="card-desc">Decomposable: structure + momentum + session + spread</div>
+          </div>
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--red)">
+            <div class="card-title">Economic calendar / news gate</div>
+            <div class="card-desc">Never send signal during NFP/FOMC — basic protection</div>
+          </div>
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--red)">
+            <div class="card-title">Web dashboard (read-only)</div>
+            <div class="card-desc">Telegram is not a product — minimum viable UI</div>
+          </div>
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--red)">
+            <div class="card-title">Paper trading end-to-end</div>
+            <div class="card-desc">Wire paper_trader.py — measure signal quality in live markets</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:.68rem;text-transform:uppercase;letter-spacing:.12em;color:var(--gold);margin-bottom:10px;font-weight:700">🟠 Tier 2 — Excellent (6–12 months)</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--gold)">
+            <div class="card-title">TradingView-quality charting</div>
+            <div class="card-desc">The chart IS the product for traders</div>
+          </div>
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--gold)">
+            <div class="card-title">Regime detection</div>
+            <div class="card-desc">Trending / ranging / volatile — gate strategies per regime</div>
+          </div>
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--gold)">
+            <div class="card-title">Correlation-aware position sizing</div>
+            <div class="card-desc">Prevent doubling up on the same risk factor</div>
+          </div>
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--gold)">
+            <div class="card-title">Multi-broker execution</div>
+            <div class="card-desc">OANDA → IBKR → Alpaca. Single broker = business risk</div>
+          </div>
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--gold)">
+            <div class="card-title">Monte Carlo drawdown</div>
+            <div class="card-desc">95th-percentile worst case — required for risk engine</div>
+          </div>
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--gold)">
+            <div class="card-title">Prometheus + Grafana ops</div>
+            <div class="card-desc">Required before any live capital touches the system</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:.68rem;text-transform:uppercase;letter-spacing:.12em;color:var(--blue);margin-bottom:10px;font-weight:700">🟡 Tier 3 — World-Class (12–24 months)</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--blue)">
+            <div class="card-title">Explainable AI signal engine</div>
+            <div class="card-desc">"Why LONG?" — ranked component explanation</div>
+          </div>
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--blue)">
+            <div class="card-title">Strategy marketplace</div>
+            <div class="card-desc">QuantConnect Alpha Streams equivalent — monetise edges</div>
+          </div>
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--blue)">
+            <div class="card-title">Social layer</div>
+            <div class="card-desc">Share signals, follow traders — TradingView's real moat</div>
+          </div>
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--blue)">
+            <div class="card-title">Copy trading</div>
+            <div class="card-desc">Signal → auto-execute for followers — 10× addressable market</div>
+          </div>
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--blue)">
+            <div class="card-title">Mobile app (iOS + Android)</div>
+            <div class="card-desc">Cannot be "best in world" without native mobile</div>
+          </div>
+          <div class="card" style="padding:12px 14px;border-left:2px solid var(--blue)">
+            <div class="card-title">White-label API for institutions</div>
+            <div class="card-desc">Prop firms pay for validated signal infrastructure</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ SLIDE 11: LIMITATIONS (was 9) -->
   <div class="slide">
     <h2>Honest <span class="accent">Limitations</span></h2>
     <p style="font-size:.85rem;color:var(--muted);margin-bottom:24px;align-self:flex-start">
@@ -1001,6 +1134,8 @@
     'CI / CD Pipeline',
     'Test Coverage',
     'Competitive Position',
+    'vs. World\'s Best Platforms',
+    'Features to Win',
     'Honest Limitations',
     'Roadmap',
     'KPIs & Team Asks',
