@@ -32,7 +32,7 @@ jobs:
   deploy:
     name: Deploy → Hetzner /opt/NovaxFX
     runs-on: ubuntu-latest
-    environment: production   # enables GitHub deployment tracking + approval gates
+    environment: Production   # enables GitHub deployment tracking + approval gates
 
     # For workflow_run: only proceed when CI succeeded.
     # For workflow_dispatch: always proceed (manual trigger is the approval).
