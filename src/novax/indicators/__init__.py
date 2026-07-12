@@ -7,7 +7,7 @@ from .ema import EMAIndicator, RMAIndicator
 from .pivot_zones import PivotZone, PivotZoneDetector
 from .supertrend import SupertrendIndicator, SupertrendResult
 from .tsi import TSIIndicator, TSIResult
-from .weekly_levels import WeeklyLevelTracker, WeeklyLevels
+from .weekly_levels import WeeklyLevels, WeeklyLevelTracker
 
 __all__ = [
     "BOSDetector",
