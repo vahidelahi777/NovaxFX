@@ -38,10 +38,10 @@ from datetime import UTC, datetime
 from ..engine import Signal
 from .multi_tf_scanner import MultiTFScanResult
 
-__all__ = ["SignalScore", "score_signal"]
+__all__ = ["SignalScore", "score_signal", "confidence_label"]
 
 # ── Thresholds ──────────────────────────────────────────────────────────────
-_HIGH_THRESHOLD = 70
+_HIGH_THRESHOLD   = 70
 _MEDIUM_THRESHOLD = 50
 
 # Minimum SL size to be worth the spread cost (XAU/USD pips)
@@ -55,13 +55,18 @@ _XAUUSD_PIP = 0.1
 
 @dataclass(frozen=True)
 class SignalScore:
-    """Immutable signal quality score with per-component breakdown."""
+    """Immutable signal quality score with per-component breakdown.
+
+    total = structure + momentum + session + cost
+    Each component uses the weight passed to score_signal() as its ceiling.
+    Default ceiling matches STATIC_WEIGHTS (imported from signal_store).
+    """
 
     total: int          # 0–100
-    structure: int      # 0–30
-    momentum: int       # 0–30
-    session: int        # 0–20
-    cost: int           # 0–20
+    structure: int      # 0–weight.structure
+    momentum: int       # 0–weight.momentum
+    session: int        # 0–weight.session
+    cost: int           # 0–weight.cost
 
     @property
     def label(self) -> str:
@@ -74,23 +79,47 @@ class SignalScore:
     def __str__(self) -> str:
         return (
             f"Score {self.total}/100 [{self.label}] "
-            f"— structure={self.structure}/30 "
-            f"momentum={self.momentum}/30 "
-            f"session={self.session}/20 "
-            f"cost={self.cost}/20"
+            f"— structure={self.structure} "
+            f"momentum={self.momentum} "
+            f"session={self.session} "
+            f"cost={self.cost}"
         )
 
 
-def score_signal(result: MultiTFScanResult, now: datetime) -> SignalScore:
-    """Compute a decomposable 0–100 score for a MultiTFScanResult.
+def confidence_label(confidence_pct: float, sample_size: int) -> str:
+    """Human-readable confidence label for display in Telegram alerts."""
+    if sample_size < 20:
+        return f"⚪ Unproven ({sample_size} samples)"
+    pct = round(confidence_pct * 100)
+    if confidence_pct >= 0.65:
+        return f"🟢 High ({pct}% win rate, n={sample_size})"
+    if confidence_pct >= 0.52:
+        return f"🟡 Moderate ({pct}% win rate, n={sample_size})"
+    return f"🔴 Low ({pct}% win rate, n={sample_size})"
+
+
+def score_signal(
+    result: MultiTFScanResult,
+    now: datetime,
+    *,
+    w_structure: int = 30,
+    w_momentum: int = 30,
+    w_session: int = 20,
+    w_cost: int = 20,
+) -> SignalScore:
+    """Compute a decomposable score for a MultiTFScanResult.
+
+    Each component's maximum points equals the corresponding weight parameter,
+    so the total is always ≤ w_structure + w_momentum + w_session + w_cost.
+    Pass optimised weights from SignalStore.suggest_weights() once available.
 
     All four components are computed independently so that any one of them
     can be improved without touching the others.
     """
-    structure = _score_structure(result)
-    momentum  = _score_momentum(result)
-    session   = _score_session(now)
-    cost      = _score_cost(result)
+    structure = _score_structure(result, w_structure)
+    momentum  = _score_momentum(result, w_momentum)
+    session   = _score_session(now, w_session)
+    cost      = _score_cost(result, w_cost)
 
     total = structure + momentum + session + cost
     return SignalScore(
@@ -104,120 +133,89 @@ def score_signal(result: MultiTFScanResult, now: datetime) -> SignalScore:
 
 # ── Component scorers ────────────────────────────────────────────────────────
 
-def _score_structure(result: MultiTFScanResult) -> int:
-    """Structure component — 0 to 30.
+def _score_structure(result: MultiTFScanResult, ceiling: int) -> int:
+    """Structure component — 0 to ceiling (default 30).
 
-    Scoring rules
-    -------------
-    +15   4H BOS is confirmed (h4_signal is not FLAT)
-    +10   1H confirms the same direction as 4H
-    + 5   15M also agrees (triple-TF alignment)
+    Points are distributed proportionally to ceiling so that changing
+    the weight via suggest_weights() scales all components together.
+
+    Rules (at ceiling=30)
+    ---------------------
+    50%  4H BOS confirmed (h4 not FLAT)
+    33%  1H confirms same direction
+    17%  15M also confirms (triple-TF)
     """
-    score = 0
-
-    # 4H BOS confirmed
+    raw = 0
     if result.h4.signal != Signal.FLAT:
-        score += 15
-
-    # 1H confirms 4H direction
+        raw += 15
     if result.h1.signal == result.h4.signal and result.h4.signal != Signal.FLAT:
-        score += 10
-
-    # 15M confirms direction (strongest confluence)
+        raw += 10
     if result.m15.signal == result.h4.signal and result.h4.signal != Signal.FLAT:
-        score += 5
+        raw += 5
+    # Scale: raw is out of 30; scale to ceiling
+    return min(round(raw * ceiling / 30), ceiling)
 
-    return min(score, 30)
 
+def _score_momentum(result: MultiTFScanResult, ceiling: int) -> int:
+    """Momentum component — 0 to ceiling (default 30).
 
-def _score_momentum(result: MultiTFScanResult) -> int:
-    """Momentum component — 0 to 30.
-
-    Scoring rules
-    -------------
-    +15   Entry price exists (strategy produced a concrete level)
-    +10   SL exists and is placed at a logical level (not None)
-    + 5   TP exists (full setup defined — entry + SL + TP)
+    Rules (at ceiling=30)
+    ---------------------
+    50%  Entry price produced (strategy has a level)
+    33%  SL defined at a logical level
+    17%  TP defined (complete setup)
     """
-    score = 0
-
+    raw = 0
     if result.entry_price is not None:
-        score += 15
-
+        raw += 15
     if result.sl is not None:
-        score += 10
-
+        raw += 10
     if result.tp is not None:
-        score += 5
+        raw += 5
+    return min(round(raw * ceiling / 30), ceiling)
 
-    return min(score, 30)
 
+def _score_session(now: datetime, ceiling: int) -> int:
+    """Session context component — 0 to ceiling (default 20).
 
-def _score_session(now: datetime) -> int:
-    """Session context component — 0 to 20.
-
-    London (08:00–17:00 UTC) and NY (13:00–22:00 UTC) are highest liquidity.
-    The overlap (13:00–17:00 UTC) is maximum liquidity.
-    Asia (00:00–08:00 UTC) is reduced liquidity.
-    Off-hours (22:00–00:00 UTC) = weekend / dead zone.
-
-    Scoring rules
-    -------------
-    +20   London–NY overlap (13:00–17:00 UTC Mon–Fri)
-    +16   London session (08:00–13:00 UTC Mon–Fri)
-    +14   NY session (17:00–22:00 UTC Mon–Fri)
-    + 8   Asia session (00:00–08:00 UTC Mon–Fri)
-    + 0   Off-hours / weekend
+    London–NY overlap > London > NY > Asia > off-hours.
+    Proportionally scaled to ceiling.
     """
     utc = now.astimezone(UTC)
-    weekday = utc.weekday()   # 0=Mon … 4=Fri, 5=Sat, 6=Sun
-    hour = utc.hour
+    weekday = utc.weekday()   # 0=Mon … 4=Fri
+    hour    = utc.hour
 
-    if weekday >= 5:   # Saturday or Sunday
+    if weekday >= 5:
         return 0
 
-    # London–NY overlap
-    if 13 <= hour < 17:
-        return 20
+    # Raw out of 20
+    if 13 <= hour < 17:   raw = 20   # London–NY overlap
+    elif 8 <= hour < 13:  raw = 16   # London only
+    elif 17 <= hour < 22: raw = 14   # NY only
+    elif 0 <= hour < 8:   raw = 8    # Asia
+    else:                 raw = 0    # dead zone 22–24
 
-    # London only
-    if 8 <= hour < 13:
-        return 16
-
-    # NY only (after London close)
-    if 17 <= hour < 22:
-        return 14
-
-    # Asia
-    if 0 <= hour < 8:
-        return 8
-
-    # 22:00–00:00 (market about to close / dead)
-    return 0
+    return min(round(raw * ceiling / 20), ceiling)
 
 
-def _score_cost(result: MultiTFScanResult) -> int:
-    """Cost / risk-reward component — 0 to 20.
+def _score_cost(result: MultiTFScanResult, ceiling: int) -> int:
+    """Cost / risk-reward component — 0 to ceiling (default 20).
 
-    Scoring rules
-    -------------
-    +10   SL is at least _MIN_SL_PIPS away from entry (trade is worthwhile)
-    +10   R:R ratio >= _MIN_RR (reward justifies the risk)
+    Rules (at ceiling=20)
+    ---------------------
+    50%  SL ≥ MIN_SL_PIPS from entry (trade covers spread cost)
+    50%  R:R ≥ MIN_RR (reward justifies the risk)
     """
-    score = 0
-
     if result.entry_price is None or result.sl is None:
         return 0
 
+    raw = 0
     sl_pips = abs(result.entry_price - result.sl) / _XAUUSD_PIP
-
     if sl_pips >= _MIN_SL_PIPS:
-        score += 10
-
+        raw += 10
     if result.tp is not None and sl_pips > 0:
         tp_pips = abs(result.tp - result.entry_price) / _XAUUSD_PIP
-        rr = tp_pips / sl_pips
-        if rr >= _MIN_RR:
-            score += 10
+        if tp_pips / sl_pips >= _MIN_RR:
+            raw += 10
 
-    return min(score, 20)
+    return min(round(raw * ceiling / 20), ceiling)
