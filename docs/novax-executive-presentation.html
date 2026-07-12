@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Novax FX — Executive Presentation · July 2026</title>
+<style>
+  :root {
+    --gold:    #d4a843;
+    --gold-lt: #f0c96a;
+    --bg:      #0b0e13;
+    --surface: #131820;
+    --card:    #1a2030;
+    --border:  #2a3448;
+    --text:    #e8edf5;
+    --muted:   #7a8ba8;
+    --green:   #3ddc97;
+    --red:     #e05c5c;
+    --blue:    #4fa3e3;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ── Progress bar ── */
+  #progress {
+    position: fixed;
+    top: 0; left: 0;
+    height: 2px;
+    background: var(--gold);
+    transition: width .35s ease;
+    z-index: 100;
+  }
+
+  /* ── Slide counter ── */
+  #counter {
+    position: fixed;
+    bottom: 20px; right: 28px;
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: .08em;
+    z-index: 100;
+  }
+
+  /* ── Nav arrows ── */
+  .nav-btn {
+    position: fixed;
+    bottom: 20px;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    width: 36px; height: 36px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: border-color .2s, color .2s;
+    z-index: 100;
+  }
+  .nav-btn:hover { border-color: var(--gold); color: var(--gold); }
+  #btn-prev { left: 20px; }
+  #btn-next { left: 62px; }
+
+  /* ── Slide container ── */
+  #deck {
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 60px 80px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .4s ease;
+  }
+  .slide.active {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  /* ── Typography ── */
+  .tag {
+    font-size: 11px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 14px;
+  }
+  h1 {
+    font-size: clamp(2rem, 4vw, 3.2rem);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -.02em;
+    text-align: center;
+  }
+  h2 {
+    font-size: clamp(1.5rem, 2.8vw, 2.2rem);
+    font-weight: 700;
+    letter-spacing: -.02em;
+    margin-bottom: 32px;
+    color: var(--text);
+    align-self: flex-start;
+  }
+  h2 .accent { color: var(--gold); }
+  .subtitle {
+    font-size: 1.05rem;
+    color: var(--muted);
+    text-align: center;
+    margin-top: 16px;
+    line-height: 1.6;
+    max-width: 700px;
+  }
+  .hero-stat {
+    font-size: clamp(3rem, 7vw, 5.5rem);
+    font-weight: 800;
+    color: var(--gold);
+    letter-spacing: -.04em;
+    line-height: 1;
+  }
+  .hero-label {
+    font-size: .95rem;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+
+  /* ── Cards / grids ── */
+  .grid { display: grid; gap: 16px; width: 100%; }
+  .g2 { grid-template-columns: 1fr 1fr; }
+  .g3 { grid-template-columns: 1fr 1fr 1fr; }
+  .g4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+  }
+  .card-title {
+    font-size: .75rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .card-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .card-value.gold { color: var(--gold); }
+  .card-value.green { color: var(--green); }
+  .card-desc {
+    font-size: .78rem;
+    color: var(--muted);
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+
+  /* ── Tables ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .82rem;
+  }
+  th {
+    text-align: left;
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--muted);
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    line-height: 1.45;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,.02); }
+  .check { color: var(--green); }
+  .dot-plan { color: var(--muted); }
+
+  /* ── Phase badges ── */
+  .badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 20px;
+    font-size: .68rem;
+    font-weight: 600;
+    letter-spacing: .05em;
+  }
+  .badge-done  { background: rgba(61,220,151,.12); color: var(--green); border: 1px solid rgba(61,220,151,.3); }
+  .badge-plan  { background: rgba(79,163,227,.10); color: var(--blue);  border: 1px solid rgba(79,163,227,.25); }
+  .badge-now   { background: rgba(212,168,67,.12); color: var(--gold);  border: 1px solid rgba(212,168,67,.3); }
+
+  /* ── Pipeline ── */
+  .pipe {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    width: 100%;
+    margin-top: 20px;
+  }
+  .pipe-step {
+    flex: 1;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 14px;
+    text-align: center;
+  }
+  .pipe-step .p-label {
+    font-size: .65rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .pipe-step .p-name {
+    font-size: .85rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .pipe-step .p-time {
+    font-size: .7rem;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+  .pipe-arrow {
+    width: 32px;
+    text-align: center;
+    color: var(--gold);
+    font-size: 1.1rem;
+    flex-shrink: 0;
+  }
+
+  /* ── Blockquote / highlight ── */
+  .highlight {
+    background: rgba(212,168,67,.08);
+    border-left: 3px solid var(--gold);
+    border-radius: 4px;
+    padding: 16px 20px;
+    font-size: .9rem;
+    line-height: 1.65;
+    color: var(--text);
+    width: 100%;
+  }
+
+  /* ── vs-table ── */
+  .vs-win  { color: var(--green); }
+  .vs-lose { color: var(--red); }
+
+  /* ── List ── */
+  ul.clean { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+  ul.clean li {
+    display: flex; align-items: flex-start; gap: 10px;
+    font-size: .9rem; line-height: 1.5;
+  }
+  ul.clean li::before {
+    content: "→";
+    color: var(--gold);
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  /* ── Roadmap timeline ── */
+  .timeline { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+  .tl-row {
+    display: flex; align-items: center; gap: 14px;
+  }
+  .tl-badge { width: 56px; text-align: right; flex-shrink: 0; }
+  .tl-bar {
+    flex: 1; height: 32px; border-radius: 6px;
+    display: flex; align-items: center; padding: 0 14px;
+    font-size: .78rem; font-weight: 600;
+  }
+  .tl-done  { background: rgba(61,220,151,.15); border: 1px solid rgba(61,220,151,.3); color: var(--green); }
+  .tl-now   { background: rgba(212,168,67,.15);  border: 1px solid rgba(212,168,67,.4);  color: var(--gold); }
+  .tl-next  { background: rgba(79,163,227,.10);  border: 1px solid rgba(79,163,227,.2);  color: var(--blue); }
+  .tl-far   { background: rgba(255,255,255,.04); border: 1px solid var(--border); color: var(--muted); }
+  .tl-when  { width: 100px; text-align: right; font-size: .72rem; color: var(--muted); flex-shrink: 0; }
+
+  /* ── Cover background grid ── */
+  .cover-bg {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(212,168,67,.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(212,168,67,.04) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+  }
+  .cover-glow {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 500px; height: 500px;
+    border-radius: 50%;
+    background: radial-gradient(ellipse, rgba(212,168,67,.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .cover-content { position: relative; z-index: 1; text-align: center; }
+
+  /* ── Ticker bar ── */
+  .ticker {
+    display: flex; gap: 24px;
+    font-size: .75rem;
+    color: var(--muted);
+    margin-top: 28px;
+  }
+  .ticker span { color: var(--green); margin-left: 4px; }
+
+  /* ── Divider ── */
+  hr.rule {
+    border: none;
+    border-top: 1px solid var(--border);
+    width: 100%;
+    margin: 18px 0;
+  }
+
+  .full-width { width: 100%; }
+
+  /* ── Slide-specific ── */
+  #slide-cover { background: var(--bg); }
+  .stats-row {
+    display: flex; gap: 32px; justify-content: center; margin-top: 40px;
+  }
+  .stat-box { text-align: center; }
+
+  /* ── Integrity pillars ── */
+  .pillar {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-top: 2px solid var(--gold);
+    border-radius: 10px;
+    padding: 24px 20px;
+    text-align: center;
+  }
+  .pillar-icon { font-size: 1.8rem; margin-bottom: 12px; }
+  .pillar-title { font-size: .95rem; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+  .pillar-desc  { font-size: .78rem; color: var(--muted); line-height: 1.55; }
+
+  /* ── Tooltip / footnote ── */
+  .footnote {
+    font-size: .72rem;
+    color: var(--muted);
+    margin-top: 14px;
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+
+<div id="progress"></div>
+<div id="counter"></div>
+<button class="nav-btn" id="btn-prev">&#8592;</button>
+<button class="nav-btn" id="btn-next">&#8594;</button>
+
+<div id="deck">
+
+  <!-- ══════════════════════════════════════════════ SLIDE 1: COVER -->
+  <div class="slide active" id="slide-cover">
+    <div class="cover-bg"></div>
+    <div class="cover-glow"></div>
+    <div class="cover-content">
+      <div class="tag">Executive Presentation &nbsp;·&nbsp; July 2026</div>
+      <h1>Novax <span style="color:var(--gold)">FX</span><br>Research Platform</h1>
+      <p class="subtitle">
+        A systematic FX &amp; gold intelligence platform built on research integrity —<br>
+        with a live monitoring daemon, causal backtest engine, and full CI/CD pipeline.
+      </p>
+      <div class="ticker">
+        <div>XAU/USD <span>▲ Active</span></div>
+        <div>Tests <span>491 passing</span></div>
+        <div>CI/CD <span>Green</span></div>
+        <div>Capital <span style="color:var(--muted)">$0 — Research only</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ SLIDE 2: PROBLEM -->
+  <div class="slide">
+    <h2>The <span class="accent">Problem</span> We Solve</h2>
+    <div class="grid g2" style="align-items:start">
+      <div>
+        <div class="highlight" style="margin-bottom:16px">
+          Most algorithmic trading platforms fail for the same reason:<br>
+          <strong>they confuse in-sample Sharpe ratios with real edge.</strong><br><br>
+          A strategy that works on the data you used to develop it is not a strategy —
+          it is memorisation.
+        </div>
+        <ul class="clean">
+          <li>Run 100 backtests, pick the best → curve-fitted noise</li>
+          <li>Report the best trial's Sharpe, ignore the rest</li>
+          <li>Live performance always disappoints</li>
+          <li>The "edge" was never real — it was selection bias</li>
+        </ul>
+      </div>
+      <div class="grid" style="grid-template-columns:1fr;gap:12px">
+        <div class="card">
+          <div class="card-title">Industry failure rate</div>
+          <div class="card-value gold">~80%</div>
+          <div class="card-desc">Of retail algo strategies fail to reproduce in live trading</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Root cause</div>
+          <div class="card-value" style="font-size:1rem;line-height:1.5">Overfitting + multiple-testing bias</div>
+          <div class="card-desc">No penalisation for the number of strategies tested</div>
+        </div>
+        <div class="card" style="border-color:rgba(212,168,67,.4)">
+          <div class="card-title">Our answer</div>
+          <div class="card-value green" style="font-size:1rem;line-height:1.5">Make overfitting structurally impossible</div>
+          <div class="card-desc">Deflated Sharpe · Lockbox · Artifact trail — all enforced by code</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ SLIDE 3: INTEGRITY -->
+  <div class="slide">
+    <h2>Research <span class="accent">Integrity</span> Layer</h2>
+    <p style="color:var(--muted);font-size:.88rem;margin-bottom:28px;align-self:flex-start">
+      Three structural guarantees that no competitor enforces
+    </p>
+    <div class="grid g3" style="width:100%">
+      <div class="pillar">
+        <div class="pillar-icon">🔬</div>
+        <div class="pillar-title">Deflated Sharpe</div>
+        <div class="pillar-desc">
+          Every trial you ran penalises the Sharpe you report. Run 50 strategies,
+          your reported Sharpe is corrected downward — automatically.
+          A 3.0 in-sample becomes ~0.8 deflated after 47 trials.
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-icon">🔒</div>
+        <div class="pillar-title">One-Shot Lockbox</div>
+        <div class="pillar-desc">
+          The out-of-sample window is sealed until all decisions are frozen.
+          Opening it twice is structurally impossible — it's a single-call function
+          that records its own opening to the artifact trail.
+        </div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-icon">📋</div>
+        <div class="pillar-title">Artifact Trail</div>
+        <div class="pillar-desc">
+          Every backtest is hash-addressed and logged <em>before</em> it runs.
+          If it crashes mid-run, the log still records the attempt.
+          No hidden experiments. No cherry-picking.
+        </div>
+      </div>
+    </div>
+    <hr class="rule" style="margin-top:32px">
+    <div class="highlight" style="margin-top:0">
+      <strong>These are not guidelines.</strong> They are enforced by code. A caller cannot bypass the
+      lockbox. The gate reads from artifacts, not from values the caller supplies.
+      Capital will not be risked until all gates pass.
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ SLIDE 4: DELIVERED -->
+  <div class="slide">
+    <h2>What Has Been <span class="accent">Delivered</span></h2>
+    <table style="width:100%">
+      <thead>
+        <tr>
+          <th>Phase</th>
+          <th>Scope</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Phase 0</strong></td>
+          <td>Sessions, instruments, cost model, deflated Sharpe, lockbox, go/no-go gate</td>
+          <td><span class="badge badge-done">✓ Complete</span></td>
+        </tr>
+        <tr>
+          <td><strong>Phase 0.7</strong></td>
+          <td>Enforcement layer: artifact registry, trial registry, experiment runner, CI guards</td>
+          <td><span class="badge badge-done">✓ Complete</span></td>
+        </tr>
+        <tr>
+          <td><strong>Phase 1 · Batch 1</strong></td>
+          <td>Causal backtest engine, EMA/ATR feature library, full engine test suite</td>
+          <td><span class="badge badge-done">✓ Complete</span></td>
+        </tr>
+        <tr>
+          <td><strong>Phase 1 · Batch 2</strong></td>
+          <td>Walk-forward split, performance metrics, end-to-end integration tests</td>
+          <td><span class="badge badge-done">✓ Complete</span></td>
+        </tr>
+        <tr>
+          <td><strong>Phase 1.5 · Live V2</strong></td>
+          <td>Multi-TF daemon, calendar events, Tehran alerts, JSONL store, Dukascopy pipeline, CI/CD</td>
+          <td><span class="badge badge-now">✓ Shipped Jul 2026</span></td>
+        </tr>
+        <tr>
+          <td><strong>Phase 2+</strong></td>
+          <td>Signal scoring, risk engine, paper trading, ML layer, dashboard</td>
+          <td><span class="badge badge-plan">Planned</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="stats-row" style="margin-top:28px">
+      <div class="stat-box">
+        <div class="hero-stat">491</div>
+        <div class="hero-label">Tests passing</div>
+      </div>
+      <div class="stat-box">
+        <div class="hero-stat" style="font-size:3rem">3.12+</div>
+        <div class="hero-label">Python versions (CI matrix)</div>
+      </div>
+      <div class="stat-box">
+        <div class="hero-stat">7</div>
+        <div class="hero-label">Live event types</div>
+      </div>
+      <div class="stat-box">
+        <div class="hero-stat">0</div>
+        <div class="hero-label">Capital at risk</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ SLIDE 5: LIVE DAEMON -->
+  <div class="slide">
+    <h2>Live <span class="accent">Daemon</span> — V2</h2>
+    <div class="grid g2" style="align-items:start;gap:20px">
+      <div>
+        <p style="font-size:.82rem;color:var(--muted);margin-bottom:14px">7 event types fire on the correct market schedule</p>
+        <table>
+          <thead>
+            <tr><th>Event</th><th>UTC</th><th>IRST</th><th>When</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Market open report</td><td>Sun 22:00</td><td>Mon 01:30</td><td>Weekly</td></tr>
+            <tr><td>London open alert</td><td>08:00</td><td>11:30</td><td>Mon–Fri</td></tr>
+            <tr><td>NY open alert</td><td>13:00</td><td>16:30</td><td>Mon–Fri</td></tr>
+            <tr><td>Daily report</td><td>20:00</td><td>23:30</td><td>Mon–Fri</td></tr>
+            <tr><td>Market close + Weekly report</td><td>Fri 21:00</td><td>Sat 00:30</td><td>Weekly</td></tr>
+            <tr><td>15M confluence alert</td><td colspan="2">On every bar close</td><td>Always</td></tr>
+          </tbody>
+        </table>
+        <p class="footnote">IRST = UTC+3:30 always. Iran does not observe DST.</p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="card">
+          <div class="card-title">Multi-TF Confluence</div>
+          <div style="font-size:.82rem;line-height:1.7;color:var(--text);margin-top:6px">
+            <span style="color:var(--gold)">4H</span> WeeklyBOSRetest &nbsp;→&nbsp; Lead signal<br>
+            <span style="color:var(--blue)">1H</span> GoldPullback &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→&nbsp; Confirmation<br>
+            <span style="color:var(--muted)">15M</span> EMACross &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→&nbsp; Informational
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Sample Telegram Alert</div>
+          <div style="font-family:monospace;font-size:.72rem;line-height:1.8;color:var(--green);margin-top:4px">
+            🟢 XAUUSD Confluence Signal<br>
+            <span style="color:var(--muted)">Time:</span>  2026-07-14 08:15 UTC / 11:45 IRST<br>
+            <span style="color:var(--muted)">4H:</span>    LONG  (BOS confirmed, retest)<br>
+            <span style="color:var(--muted)">1H:</span>    LONG  (above EMA50, pullback)<br>
+            <span style="color:var(--muted)">Entry:</span> 2725.50 | SL: 2700.00 | TP: 2751.00
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Persistent Storage</div>
+          <div class="card-desc">JSONL append-only store for WeeklyLevel and SignalRecord — every alert is logged, no data lost on restart</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ SLIDE 6: CI/CD -->
+  <div class="slide">
+    <h2>CI / <span class="accent">CD</span> Pipeline</h2>
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:6px;align-self:flex-start">
+      Every push to <code style="background:var(--card);padding:2px 7px;border-radius:4px;color:var(--gold)">main</code> that passes all gates auto-deploys to the Hetzner production server
+    </p>
+
+    <div class="pipe" style="margin-top:30px">
+      <div class="pipe-step">
+        <div class="p-label">Job 1</div>
+        <div class="p-name">Lint &amp; Type-check</div>
+        <div class="p-time">ruff + mypy · ~30s</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="p-label">Job 2</div>
+        <div class="p-name">Test Suite</div>
+        <div class="p-time">Python 3.12 + 3.13 · ~60s</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step">
+        <div class="p-label">Job 3</div>
+        <div class="p-name">Docker Build</div>
+        <div class="p-time">Smoke test · GHA cache · ~45s</div>
+      </div>
+      <div class="pipe-arrow">→</div>
+      <div class="pipe-step" style="border-color:rgba(212,168,67,.5)">
+        <div class="p-label">Auto-Deploy</div>
+        <div class="p-name" style="color:var(--gold)">SSH → Hetzner</div>
+        <div class="p-time">git pull + docker compose up</div>
+      </div>
+    </div>
+
+    <hr class="rule" style="margin-top:32px">
+
+    <div class="grid g3" style="margin-top:4px">
+      <div class="card">
+        <div class="card-title">Fast gate</div>
+        <div class="card-desc">Lint runs first — a bad import or type error kills the run in 30s before wasting 2 minutes on tests</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Parallel matrix</div>
+        <div class="card-desc">Python 3.12 and 3.13 run in parallel. A 3.13 regression is caught before it ships</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Never abort mid-deploy</div>
+        <div class="card-desc">Deploy concurrency is <code style="font-size:.75rem">cancel-in-progress: false</code> — a second push never kills an in-flight deploy</div>
+      </div>
+    </div>
+
+    <p class="footnote" style="align-self:flex-start">Secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_KEY — env-var only, never logged, never baked into image</p>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ SLIDE 7: TEST COVERAGE -->
+  <div class="slide">
+    <h2>Test <span class="accent">Coverage</span></h2>
+    <div class="grid g2" style="align-items:center">
+      <div style="text-align:center">
+        <div class="hero-stat">491</div>
+        <div class="hero-label">All passing · Python 3.12 + 3.13</div>
+        <div style="margin-top:32px">
+          <div style="background:var(--card);border-radius:10px;overflow:hidden;height:220px;display:flex;align-items:flex-end;gap:8px;padding:16px;border:1px solid var(--border)">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">
+              <div style="background:var(--gold);border-radius:4px 4px 0 0;width:100%;height:128px;opacity:.85"></div>
+              <span style="font-size:.65rem;color:var(--muted);text-align:center">Core<br>engine<br>~250</span>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">
+              <div style="background:var(--blue);border-radius:4px 4px 0 0;width:100%;height:77px;opacity:.85"></div>
+              <span style="font-size:.65rem;color:var(--muted);text-align:center">Live<br>module<br>~150</span>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">
+              <div style="background:var(--green);border-radius:4px 4px 0 0;width:100%;height:31px;opacity:.85"></div>
+              <span style="font-size:.65rem;color:var(--muted);text-align:center">Indicators<br>~60</span>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">
+              <div style="background:#9b59b6;border-radius:4px 4px 0 0;width:100%;height:16px;opacity:.85"></div>
+              <span style="font-size:.65rem;color:var(--muted);text-align:center">Data<br>pipeline<br>~31</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Area</th><th>Tests</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Research core (engine, metrics, validation, gate, artifacts)</td>
+            <td>~250</td>
+            <td class="check">✓</td>
+          </tr>
+          <tr>
+            <td>Live module (scheduler, scanner, messages, store, tz)</td>
+            <td>~150</td>
+            <td class="check">✓</td>
+          </tr>
+          <tr>
+            <td>Indicators (BOS, EMA, ATR, SuperTrend, TSI, weekly levels)</td>
+            <td>~60</td>
+            <td class="check">✓</td>
+          </tr>
+          <tr>
+            <td>Data pipeline (Parquet store, Dukascopy ingest)</td>
+            <td>~31</td>
+            <td class="check">✓</td>
+          </tr>
+          <tr style="font-weight:700">
+            <td>Total</td>
+            <td>491</td>
+            <td class="check">All pass</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ SLIDE 8: COMPETITIVE -->
+  <div class="slide">
+    <h2>Competitive <span class="accent">Position</span></h2>
+    <table style="width:100%;font-size:.78rem">
+      <thead>
+        <tr>
+          <th>Capability</th>
+          <th>QuantConnect</th>
+          <th>NautilusTrader</th>
+          <th>Freqtrade</th>
+          <th style="color:var(--gold)">Novax FX</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Causal backtest engine</td>
+          <td class="vs-win">✓</td>
+          <td class="vs-win">✓</td>
+          <td class="vs-win">✓</td>
+          <td class="vs-win">✓</td>
+        </tr>
+        <tr>
+          <td><strong>Deflated Sharpe (automatic)</strong></td>
+          <td class="vs-lose">✗</td>
+          <td class="vs-lose">✗</td>
+          <td class="vs-lose">✗</td>
+          <td class="vs-win" style="color:var(--gold)"><strong>✓ Built-in</strong></td>
+        </tr>
+        <tr>
+          <td><strong>Out-of-sample lockbox</strong></td>
+          <td class="vs-lose">✗</td>
+          <td class="vs-lose">✗</td>
+          <td class="vs-lose">✗</td>
+          <td class="vs-win" style="color:var(--gold)"><strong>✓ Enforced by code</strong></td>
+        </tr>
+        <tr>
+          <td><strong>Artifact trail before execution</strong></td>
+          <td class="vs-lose">✗</td>
+          <td class="vs-lose">✗</td>
+          <td class="vs-lose">✗</td>
+          <td class="vs-win" style="color:var(--gold)"><strong>✓ Hash-addressed</strong></td>
+        </tr>
+        <tr>
+          <td>Live trading integrations</td>
+          <td class="vs-win">✓ Many brokers</td>
+          <td class="vs-win">✓ IBKR, Binance</td>
+          <td class="vs-win">✓ Crypto</td>
+          <td class="dot-plan">Planned P5</td>
+        </tr>
+        <tr>
+          <td>Pessimistic cost model</td>
+          <td class="dot-plan">Configurable</td>
+          <td class="dot-plan">Manual</td>
+          <td class="dot-plan">Exchange fees</td>
+          <td class="vs-win">✓ Stress-tested</td>
+        </tr>
+        <tr>
+          <td>Full stack ownership</td>
+          <td class="vs-lose">✗ Vendor lock-in</td>
+          <td class="vs-win">✓</td>
+          <td class="vs-win">✓</td>
+          <td class="vs-win">✓ Self-hosted</td>
+        </tr>
+        <tr>
+          <td>XAU/USD first-class</td>
+          <td class="dot-plan">Generic</td>
+          <td class="dot-plan">Generic</td>
+          <td class="vs-lose">✗ Crypto only</td>
+          <td class="vs-win">✓ XAU specialised</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="highlight" style="margin-top:18px;font-size:.82rem">
+      <strong>The moat:</strong> Research integrity is structural, not optional. No competitor enforces all three
+      (deflated Sharpe + lockbox + artifact trail) by code. This is the right long-term advantage because
+      overfitting is the industry's core failure mode — and we make it impossible.
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ SLIDE 9: LIMITATIONS -->
+  <div class="slide">
+    <h2>Honest <span class="accent">Limitations</span></h2>
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:24px;align-self:flex-start">
+      Known gaps — transparent, planned, not ignored
+    </p>
+    <table style="width:100%">
+      <thead>
+        <tr><th>Limitation</th><th>Current impact</th><th>Plan</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>No validated strategy yet</strong></td>
+          <td>Cannot move to paper trading</td>
+          <td>Completing walk-forward on WeeklyBOSRetest — target Aug 2026</td>
+        </tr>
+        <tr>
+          <td><strong>XAU/USD only (live daemon)</strong></td>
+          <td>Single-instrument concentration</td>
+          <td>EUR/USD next after XAU/USD passes all gates</td>
+        </tr>
+        <tr>
+          <td><strong>No risk engine</strong></td>
+          <td>Cannot safely automate entries</td>
+          <td>P3 — ships before paper trading starts (non-negotiable)</td>
+        </tr>
+        <tr>
+          <td><strong>No dashboard</strong></td>
+          <td>Manual Telegram monitoring only</td>
+          <td>P4 — FastAPI + Next.js, read-only</td>
+        </tr>
+        <tr>
+          <td><strong>Dukascopy historical only</strong></td>
+          <td>No real-time data feed</td>
+          <td>TwelveData adapter seam is ready; budget approval needed</td>
+        </tr>
+        <tr>
+          <td><strong>Single server (Hetzner)</strong></td>
+          <td>Single point of failure</td>
+          <td>Acceptable for research phase; HA deferred to P5</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="highlight" style="margin-top:20px;font-size:.82rem">
+      <strong>Hard rule:</strong> No real capital. No downstream tier. Until a strategy passes
+      deflated Sharpe + lockbox + go/no-go gate — in that order, with all decisions frozen before the lockbox opens.
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ SLIDE 10: ROADMAP -->
+  <div class="slide">
+    <h2>Road<span class="accent">map</span></h2>
+    <div class="timeline full-width" style="margin-top:8px">
+      <div class="tl-row">
+        <div class="tl-badge"><span class="badge badge-done">P0</span></div>
+        <div class="tl-bar tl-done">Research scaffold — sessions, instruments, costs, validation, enforcement</div>
+        <div class="tl-when">✓ Complete</div>
+      </div>
+      <div class="tl-row">
+        <div class="tl-badge"><span class="badge badge-done">P1</span></div>
+        <div class="tl-bar tl-done">Backtest engine — causal fills, walk-forward, metrics, 491 tests</div>
+        <div class="tl-when">✓ Complete</div>
+      </div>
+      <div class="tl-row">
+        <div class="tl-badge"><span class="badge badge-now">P1.5</span></div>
+        <div class="tl-bar tl-now">Live daemon V2 — calendar events, Telegram, JSONL store, CI/CD</div>
+        <div class="tl-when">✓ Jul 2026</div>
+      </div>
+      <div class="tl-row">
+        <div class="tl-badge"><span class="badge badge-plan">P2</span></div>
+        <div class="tl-bar tl-next">Signal scoring — decomposable 0–100 score, all components stored</div>
+        <div class="tl-when">Q3 2026</div>
+      </div>
+      <div class="tl-row">
+        <div class="tl-badge"><span class="badge badge-plan">P3</span></div>
+        <div class="tl-bar tl-next">Risk engine — kill switch, position limits, pre-trade gate</div>
+        <div class="tl-when">Q3 2026</div>
+      </div>
+      <div class="tl-row">
+        <div class="tl-badge"><span class="badge badge-plan">P4</span></div>
+        <div class="tl-bar tl-far">Thin API + dashboard — FastAPI, Next.js, read-only, audit log</div>
+        <div class="tl-when">Q4 2026</div>
+      </div>
+      <div class="tl-row">
+        <div class="tl-badge"><span class="badge badge-plan">P5</span></div>
+        <div class="tl-bar tl-far">Paper trading — live data, sim fills, through real risk engine</div>
+        <div class="tl-when">Q4 2026</div>
+      </div>
+      <div class="tl-row">
+        <div class="tl-badge"><span class="badge badge-plan">P6</span></div>
+        <div class="tl-bar tl-far">Semi-auto — human confirm → OANDA v20 API execution</div>
+        <div class="tl-when">Q1 2027</div>
+      </div>
+      <div class="tl-row">
+        <div class="tl-badge"><span class="badge badge-plan">P7</span></div>
+        <div class="tl-bar tl-far">Fully auto — autonomous, hard risk gate, small capital only</div>
+        <div class="tl-when">Q2 2027</div>
+      </div>
+      <div class="tl-row">
+        <div class="tl-badge"><span class="badge badge-plan">P8</span></div>
+        <div class="tl-bar tl-far">Commercial SaaS — multi-tenant signal / analytics / risk products</div>
+        <div class="tl-when">TBD</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ SLIDE 11: ASKS / KPIs -->
+  <div class="slide">
+    <h2>KPIs &amp; <span class="accent">Team Asks</span></h2>
+    <div class="grid g2" style="align-items:start;gap:24px">
+      <div>
+        <p style="font-size:.75rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:12px">KPIs — Next 90 Days</p>
+        <table>
+          <thead><tr><th>KPI</th><th>Target</th><th>Now</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>CI pass rate</td>
+              <td>&gt;95%</td>
+              <td><span class="badge badge-now">Establishing</span></td>
+            </tr>
+            <tr>
+              <td>Walk-forward Sharpe (XAU)</td>
+              <td>&gt;1.5 net-of-costs</td>
+              <td><span class="badge badge-plan">In progress</span></td>
+            </tr>
+            <tr>
+              <td>Deflated Sharpe pass</td>
+              <td>YES</td>
+              <td><span class="badge badge-plan">In progress</span></td>
+            </tr>
+            <tr>
+              <td>Test count</td>
+              <td>Growing</td>
+              <td><span class="badge badge-done">491</span></td>
+            </tr>
+            <tr>
+              <td>Daemon uptime</td>
+              <td>&gt;99%</td>
+              <td><span class="badge badge-now">Monitoring</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <p style="font-size:.75rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:12px">Decision Asks</p>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div class="card">
+            <div class="card-title">1. Data budget</div>
+            <div class="card-desc" style="font-size:.83rem">TwelveData premium plan for real-time 1M bars — ~$50/month. Required for P5 paper trading live feed.</div>
+          </div>
+          <div class="card">
+            <div class="card-title">2. Hetzner upgrade</div>
+            <div class="card-desc" style="font-size:.83rem">CAX11 → CAX21 when paper trading starts (~Q4 2026). Current server is sufficient for research.</div>
+          </div>
+          <div class="card">
+            <div class="card-title">3. Go/No-Go meeting date</div>
+            <div class="card-desc" style="font-size:.83rem">Set a target date for the walk-forward go/no-go review. Proposed: end of August 2026.</div>
+          </div>
+          <div class="card">
+            <div class="card-title">4. GitHub environment approval</div>
+            <div class="card-desc" style="font-size:.83rem">Enable the "Production" environment gate in GitHub repo settings for deploy approval workflow.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ SLIDE 12: BOTTOM LINE -->
+  <div class="slide" id="slide-final">
+    <div class="cover-bg"></div>
+    <div class="cover-glow"></div>
+    <div style="position:relative;z-index:1;text-align:center;max-width:780px">
+      <div class="tag">Bottom Line</div>
+      <h1 style="font-size:clamp(1.6rem,3.2vw,2.6rem);margin-bottom:28px;line-height:1.25">
+        The platform is technically ready.<br>
+        <span style="color:var(--gold)">The next milestone is an honest validated edge.</span>
+      </h1>
+      <div class="grid g3" style="margin-bottom:32px;text-align:left">
+        <div class="card">
+          <div class="card-title">Infrastructure</div>
+          <div class="card-value green" style="font-size:1.1rem">Ready</div>
+          <div class="card-desc">491 tests, CI/CD, live daemon, Dukascopy pipeline, Docker deploy</div>
+        </div>
+        <div class="card" style="border-color:rgba(212,168,67,.4)">
+          <div class="card-title">Research integrity</div>
+          <div class="card-value gold" style="font-size:1.1rem">Stronger than any competitor</div>
+          <div class="card-desc">Deflated Sharpe + lockbox + artifact trail, all enforced structurally</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Next hard milestone</div>
+          <div class="card-value" style="font-size:1rem;line-height:1.4">Walk-forward go/no-go on XAU/USD</div>
+          <div class="card-desc">Target: August 2026. If GO → paper trading. If NO-GO → back to research.</div>
+        </div>
+      </div>
+      <div class="highlight" style="text-align:left;font-size:.88rem">
+        <strong>The governing rule:</strong> No real capital. No downstream tier. Until a strategy survives honest,
+        gated validation — including the judgment to walk away from an idea that doesn't work.
+        That discipline is the product.
+      </div>
+      <p class="footnote" style="margin-top:20px">Not financial advice · Research infrastructure only · July 2026</p>
+    </div>
+  </div>
+
+</div><!-- /deck -->
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const total  = slides.length;
+  let cur = 0;
+
+  const titles = [
+    'Cover',
+    'The Problem',
+    'Research Integrity',
+    'What We Delivered',
+    'Live Daemon V2',
+    'CI / CD Pipeline',
+    'Test Coverage',
+    'Competitive Position',
+    'Honest Limitations',
+    'Roadmap',
+    'KPIs & Team Asks',
+    'Bottom Line',
+  ];
+
+  function goTo(n) {
+    if (n < 0 || n >= total) return;
+    slides[cur].classList.remove('active');
+    cur = n;
+    slides[cur].classList.add('active');
+    document.getElementById('progress').style.width = ((cur + 1) / total * 100) + '%';
+    document.getElementById('counter').textContent =
+      (cur + 1) + ' / ' + total + '  —  ' + (titles[cur] || '');
+  }
+
+  document.getElementById('btn-prev').addEventListener('click', () => goTo(cur - 1));
+  document.getElementById('btn-next').addEventListener('click', () => goTo(cur + 1));
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') { e.preventDefault(); goTo(cur + 1); }
+    if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')                    { e.preventDefault(); goTo(cur - 1); }
+    if (e.key === 'Home') goTo(0);
+    if (e.key === 'End')  goTo(total - 1);
+  });
+
+  // Touch / swipe
+  let touchX = null;
+  document.addEventListener('touchstart', e => { touchX = e.touches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend',   e => {
+    if (touchX === null) return;
+    const dx = e.changedTouches[0].clientX - touchX;
+    if (Math.abs(dx) > 50) { dx < 0 ? goTo(cur + 1) : goTo(cur - 1); }
+    touchX = null;
+  }, { passive: true });
+
+  goTo(0);
+</script>
+</body>
+</html>
