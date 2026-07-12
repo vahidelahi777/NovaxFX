@@ -1,8 +1,12 @@
 """Production daemon: multi-TF signal scanner with Telegram alerts.
 
-Wakes at every 15-minute bar close, fetches live bars for 4H / 1H / 15M,
-runs cascaded strategy analysis, and fires a Telegram alert when 4H and 1H
-agree on the same direction.  De-duplicates alerts per H4 bar.
+Event schedule (all UTC → IRST = UTC+3:30):
+  Every 15M bar close  — Multi-TF confluence scan + Telegram alert (if applicable)
+  Sunday    22:00 UTC  — Market-open report with previous-week H/L  (01:30 IRST Mon)
+  Mon-Fri   08:00 UTC  — London-open session alert                  (11:30 IRST)
+  Mon-Fri   13:00 UTC  — NY-open session alert                      (16:30 IRST)
+  Mon-Fri   20:00 UTC  — Daily summary report                       (23:30 IRST)
+  Friday    21:00 UTC  — Market-close + weekly report               (00:30 IRST Sat)
 
 Usage:
   python scripts/prod_daemon_xauusd.py \\
@@ -34,13 +38,27 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from novax.data.ingest.twelvedata import fetch_bars
-from novax.engine import Signal
+from novax.engine import BarView, Position
 from novax.live import (
     AlertStateStore,
-    BarScheduler,
+    EventScheduler,
+    EventType,
+    LevelStore,
     MultiTFScanner,
     MultiTFScanResult,
+    SignalRecord,
+    WeeklyLevel,
+    compute_day_levels,
+    compute_week_levels,
+    current_week_start,
+    fmt_confluence_alert,
+    fmt_daily_report,
+    fmt_market_close,
+    fmt_market_open,
+    fmt_session_open,
+    fmt_weekly_report,
 )
+from novax.strategies.weekly_bos_retest import WeeklyBOSRetest
 
 _shutdown = threading.Event()
 
@@ -91,66 +109,14 @@ def _send_telegram(token: str, chat_id: str, text: str, log: logging.Logger) -> 
         log.warning("Telegram send failed: %s", exc)
 
 
-def _format_telegram(result: MultiTFScanResult) -> str:
-    direction = result.direction.value  # "LONG" or "SHORT"
-    dir_emoji = "🟢" if result.direction == Signal.LONG else "🔴"
-
-    sl_str = f"{result.sl:,.2f}" if result.sl is not None else "n/a"
-    tp_str = f"{result.tp:,.2f}" if result.tp is not None else "n/a"
-
-    rr_str = "n/a"
-    if result.sl is not None and result.tp is not None and result.entry_price is not None:
-        risk = abs(result.entry_price - result.sl)
-        reward = abs(result.tp - result.entry_price)
-        if risk > 0:
-            rr_str = f"{reward / risk:.1f}"
-
-    h1_emoji = "✅" if result.h1.signal == result.direction else "⚠️"
-    m15_label = result.m15.signal.value if result.m15.signal != Signal.FLAT else "FLAT"
-
-    entry_str = (
-        f"{result.entry_price:,.2f}" if result.entry_price is not None else "n/a"
-    )
-    scan_str = result.scanned_at.strftime("%Y-%m-%d %H:%M UTC")
-
-    lines = [
-        f"🔔 *{result.symbol} — Multi-TF Alert*",
-        "",
-        f"*Direction : {dir_emoji} {direction}*",
-        "",
-        f"4H BOS Retest : ✅ {result.h4.signal.value}",
-        f"  SL : {sl_str}",
-        f"  TP : {tp_str}  (RR {rr_str})",
-        "",
-        f"1H Pullback   : {h1_emoji} {result.h1.signal.value}  (confirmed)",
-        f"15M EMA Cross : {m15_label}  ⏱ entry timing",
-        "",
-        f"Entry ref : {entry_str}",
-        f"Scanned   : {scan_str}",
-    ]
-    return "\n".join(lines)
-
-
-def _run_cycle(
-    *,
+def _fetch_all(
     symbol: str,
     lookback_h4: int,
     lookback_h1: int,
     lookback_m15: int,
-    state_dir: Path,
-    scanner: MultiTFScanner,
-    alert_store: AlertStateStore,
     api_key: str,
-    telegram_token: str,
-    telegram_chat_id: str,
-    log: logging.Logger,
-) -> None:
+) -> tuple[list, list, list]:
     now = datetime.now(tz=UTC)
-
-    log.info(
-        "Fetching %s bars — 4H:%dd  1H:%dd  15M:%dd",
-        symbol, lookback_h4, lookback_h1, lookback_m15,
-    )
     bars_h4 = fetch_bars(
         symbol=symbol,
         interval="4h",
@@ -172,14 +138,51 @@ def _run_cycle(
         end=now,
         api_key=api_key,
     )
+    return bars_h4, bars_h1, bars_m15
+
+
+def _bos_state_from_h4(bars_h4: list) -> str:
+    """Replay WeeklyBOSRetest on 4H bars and return the BOS state string."""
+    strat = WeeklyBOSRetest()
+    flat = Position(direction="FLAT")
+    for i in range(len(bars_h4)):
+        strat.on_bar(BarView(bars=tuple(bars_h4[: i + 1])), flat)
+    bos = strat._bos.value  # noqa: SLF001
+    return bos.state.value if bos is not None else "idle"
+
+
+# ------------------------------------------------------------------
+# Event handlers
+# ------------------------------------------------------------------
+
+def _handle_15m(
+    *,
+    symbol: str,
+    lookback_h4: int,
+    lookback_h1: int,
+    lookback_m15: int,
+    scanner: MultiTFScanner,
+    alert_store: AlertStateStore,
+    level_store: LevelStore,
+    api_key: str,
+    telegram_token: str,
+    telegram_chat_id: str,
+    log: logging.Logger,
+) -> None:
+    now = datetime.now(tz=UTC)
+    log.info(
+        "Fetching %s bars — 4H:%dd  1H:%dd  15M:%dd",
+        symbol, lookback_h4, lookback_h1, lookback_m15,
+    )
+    bars_h4, bars_h1, bars_m15 = _fetch_all(
+        symbol, lookback_h4, lookback_h1, lookback_m15, api_key
+    )
     log.info(
         "Bars fetched — 4H:%d  1H:%d  15M:%d",
-        len(bars_h4),
-        len(bars_h1),
-        len(bars_m15),
+        len(bars_h4), len(bars_h1), len(bars_m15),
     )
 
-    result = scanner.scan(bars_h4, bars_h1, bars_m15)
+    result: MultiTFScanResult = scanner.scan(bars_h4, bars_h1, bars_m15)
     log.info(
         "[%s] 4H=%s 1H=%s 15M=%s conf=%s SL=%s TP=%s",
         symbol,
@@ -191,6 +194,21 @@ def _run_cycle(
         f"{result.tp:.2f}" if result.tp is not None else "n/a",
     )
 
+    level_store.append_signal(
+        SignalRecord(
+            ts=now.isoformat(),
+            symbol=symbol,
+            h4_signal=result.h4.signal.value,
+            h1_signal=result.h1.signal.value,
+            m15_signal=result.m15.signal.value,
+            confluence=result.confluence,
+            entry_price=result.entry_price,
+            sl=result.sl,
+            tp=result.tp,
+            source="15m_scan",
+        )
+    )
+
     if result.confluence:
         state = alert_store.load()
         if state.is_duplicate(result.direction.value, result.h4.last_bar_ts):
@@ -199,7 +217,7 @@ def _run_cycle(
                 result.h4.last_bar_ts,
             )
         else:
-            msg = _format_telegram(result)
+            msg = fmt_confluence_alert(result)
             _send_telegram(telegram_token, telegram_chat_id, msg, log)
             state.update(result.direction.value, result.h4.last_bar_ts)
             alert_store.save(state)
@@ -211,6 +229,212 @@ def _run_cycle(
             result.h1.signal.value,
         )
 
+
+def _handle_market_open(
+    *,
+    symbol: str,
+    lookback_h4: int,
+    level_store: LevelStore,
+    api_key: str,
+    telegram_token: str,
+    telegram_chat_id: str,
+    log: logging.Logger,
+) -> None:
+    now = datetime.now(tz=UTC)
+    bars_h4 = fetch_bars(
+        symbol=symbol,
+        interval="4h",
+        start=now - timedelta(days=lookback_h4),
+        end=now,
+        api_key=api_key,
+    )
+    if not bars_h4:
+        log.warning("market_open: no 4H bars returned")
+        return
+
+    # Previous week = bars from 7–14 days ago
+    prev_week_start = current_week_start(now) - timedelta(weeks=1)
+    prev_week_end = current_week_start(now)
+    prev_bars = [
+        b for b in bars_h4
+        if prev_week_start <= b.ts.astimezone(UTC) < prev_week_end
+    ]
+    prev_week = compute_week_levels(prev_bars, prev_week_start) if prev_bars else None
+
+    bos_state = _bos_state_from_h4(bars_h4)
+    last_close = bars_h4[-1].close
+
+    if prev_week is not None:
+        level_store.append_level(
+            WeeklyLevel(
+                week_start=prev_week_start.strftime("%Y-%m-%d"),
+                symbol=symbol,
+                prev_high=prev_week.high,
+                prev_low=prev_week.low,
+                week_high=None,
+                week_low=None,
+                recorded_at=now.isoformat(),
+            )
+        )
+
+    msg = fmt_market_open(symbol, prev_week, last_close, bos_state, now)
+    _send_telegram(telegram_token, telegram_chat_id, msg, log)
+    log.info("market_open report sent: %s", symbol)
+
+
+def _handle_market_close(
+    *,
+    symbol: str,
+    lookback_h4: int,
+    level_store: LevelStore,
+    api_key: str,
+    telegram_token: str,
+    telegram_chat_id: str,
+    log: logging.Logger,
+) -> None:
+    now = datetime.now(tz=UTC)
+    bars_h4 = fetch_bars(
+        symbol=symbol,
+        interval="4h",
+        start=now - timedelta(days=lookback_h4),
+        end=now,
+        api_key=api_key,
+    )
+    if not bars_h4:
+        log.warning("market_close: no 4H bars returned")
+        return
+
+    ws = current_week_start(now)
+    current_week = compute_week_levels(bars_h4, ws)
+    last_close = bars_h4[-1].close
+
+    if current_week is not None:
+        level_store.append_level(
+            WeeklyLevel(
+                week_start=ws.strftime("%Y-%m-%d"),
+                symbol=symbol,
+                prev_high=None,
+                prev_low=None,
+                week_high=current_week.high,
+                week_low=current_week.low,
+                recorded_at=now.isoformat(),
+            )
+        )
+
+    msg = fmt_market_close(symbol, current_week, last_close, now)
+    _send_telegram(telegram_token, telegram_chat_id, msg, log)
+    log.info("market_close report sent: %s", symbol)
+
+
+def _handle_weekly_report(
+    *,
+    symbol: str,
+    lookback_h4: int,
+    api_key: str,
+    telegram_token: str,
+    telegram_chat_id: str,
+    log: logging.Logger,
+) -> None:
+    now = datetime.now(tz=UTC)
+    bars_h4 = fetch_bars(
+        symbol=symbol,
+        interval="4h",
+        start=now - timedelta(days=lookback_h4),
+        end=now,
+        api_key=api_key,
+    )
+    if not bars_h4:
+        log.warning("weekly_report: no 4H bars returned")
+        return
+
+    ws = current_week_start(now)
+    current_week = compute_week_levels(bars_h4, ws)
+    bos_state = _bos_state_from_h4(bars_h4)
+    last_close = bars_h4[-1].close
+
+    msg = fmt_weekly_report(symbol, current_week, bos_state, last_close, now)
+    _send_telegram(telegram_token, telegram_chat_id, msg, log)
+    log.info("weekly_report sent: %s", symbol)
+
+
+def _handle_session_open(
+    *,
+    session: str,
+    symbol: str,
+    lookback_m15: int,
+    scanner: MultiTFScanner,
+    api_key: str,
+    telegram_token: str,
+    telegram_chat_id: str,
+    log: logging.Logger,
+) -> None:
+    now = datetime.now(tz=UTC)
+    bars_m15 = fetch_bars(
+        symbol=symbol,
+        interval="15min",
+        start=now - timedelta(days=lookback_m15),
+        end=now,
+        api_key=api_key,
+    )
+    bars_h4 = fetch_bars(
+        symbol=symbol,
+        interval="4h",
+        start=now - timedelta(days=14),
+        end=now,
+        api_key=api_key,
+    )
+    bars_h1 = fetch_bars(
+        symbol=symbol,
+        interval="1h",
+        start=now - timedelta(days=7),
+        end=now,
+        api_key=api_key,
+    )
+    if not bars_m15:
+        log.warning("%s_open: no bars", session.lower())
+        return
+
+    result = scanner.scan(bars_h4, bars_h1, bars_m15)
+    current_price = bars_m15[-1].close
+
+    msg = fmt_session_open(
+        symbol, session, current_price, result.h4.signal, result.h1.signal, now
+    )
+    _send_telegram(telegram_token, telegram_chat_id, msg, log)
+    log.info("%s open alert sent: %s price=%.2f", session, symbol, current_price)
+
+
+def _handle_daily_report(
+    *,
+    symbol: str,
+    lookback_h4: int,
+    lookback_h1: int,
+    lookback_m15: int,
+    scanner: MultiTFScanner,
+    api_key: str,
+    telegram_token: str,
+    telegram_chat_id: str,
+    log: logging.Logger,
+) -> None:
+    now = datetime.now(tz=UTC)
+    bars_h4, bars_h1, bars_m15 = _fetch_all(
+        symbol, lookback_h4, lookback_h1, lookback_m15, api_key
+    )
+    if not bars_h1:
+        log.warning("daily_report: no bars")
+        return
+
+    result = scanner.scan(bars_h4, bars_h1, bars_m15)
+    day_levels = compute_day_levels(bars_h1, now)
+
+    msg = fmt_daily_report(symbol, result, day_levels, now)
+    _send_telegram(telegram_token, telegram_chat_id, msg, log)
+    log.info("daily_report sent: %s", symbol)
+
+
+# ------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -254,6 +478,7 @@ def main() -> None:
     state_dir.mkdir(parents=True, exist_ok=True)
 
     alert_store = AlertStateStore(state_dir / f"alert_state_{symbol}.json")
+    level_store = LevelStore(state_dir / f"levels_{symbol}.jsonl")
     scanner = MultiTFScanner(
         symbol,
         h4_params={
@@ -264,34 +489,103 @@ def main() -> None:
             "risk_reward": args.risk_reward,
         },
     )
+    event_sched = EventScheduler()
 
-    log.info("Daemon started — %s  state-dir=%s", symbol, state_dir)
+    log.info("Daemon started (V2) — %s  state-dir=%s", symbol, state_dir)
 
-    sched = BarScheduler(900)
     while not _shutdown.is_set():
-        nxt = sched.next_bar_close(datetime.now(tz=UTC))
-        log.info("Next 15M close: %s UTC — sleeping …", nxt.strftime("%Y-%m-%d %H:%M:%S"))
-        _sleep_until(nxt)
+        fire_at, events = event_sched.next_events(datetime.now(tz=UTC))
+        log.info(
+            "Next event(s): %s at %s UTC",
+            [e.value for e in events],
+            fire_at.strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        _sleep_until(fire_at)
 
         if _shutdown.is_set():
             break
 
-        try:
-            _run_cycle(
-                symbol=symbol,
-                lookback_h4=args.lookback_4h,
-                lookback_h1=args.lookback_1h,
-                lookback_m15=args.lookback_15m,
-                state_dir=state_dir,
-                scanner=scanner,
-                alert_store=alert_store,
-                api_key=api_key,
-                telegram_token=telegram_token,
-                telegram_chat_id=telegram_chat_id,
-                log=log,
-            )
-        except Exception:  # noqa: BLE001
-            log.exception("Cycle error — will retry at next 15M close")
+        for event in events:
+            try:
+                if event == EventType.BAR_CLOSE_15M:
+                    _handle_15m(
+                        symbol=symbol,
+                        lookback_h4=args.lookback_4h,
+                        lookback_h1=args.lookback_1h,
+                        lookback_m15=args.lookback_15m,
+                        scanner=scanner,
+                        alert_store=alert_store,
+                        level_store=level_store,
+                        api_key=api_key,
+                        telegram_token=telegram_token,
+                        telegram_chat_id=telegram_chat_id,
+                        log=log,
+                    )
+                elif event == EventType.MARKET_OPEN:
+                    _handle_market_open(
+                        symbol=symbol,
+                        lookback_h4=args.lookback_4h,
+                        level_store=level_store,
+                        api_key=api_key,
+                        telegram_token=telegram_token,
+                        telegram_chat_id=telegram_chat_id,
+                        log=log,
+                    )
+                elif event == EventType.MARKET_CLOSE:
+                    _handle_market_close(
+                        symbol=symbol,
+                        lookback_h4=args.lookback_4h,
+                        level_store=level_store,
+                        api_key=api_key,
+                        telegram_token=telegram_token,
+                        telegram_chat_id=telegram_chat_id,
+                        log=log,
+                    )
+                elif event == EventType.WEEKLY_REPORT:
+                    _handle_weekly_report(
+                        symbol=symbol,
+                        lookback_h4=args.lookback_4h,
+                        api_key=api_key,
+                        telegram_token=telegram_token,
+                        telegram_chat_id=telegram_chat_id,
+                        log=log,
+                    )
+                elif event == EventType.LONDON_OPEN:
+                    _handle_session_open(
+                        session="London",
+                        symbol=symbol,
+                        lookback_m15=args.lookback_15m,
+                        scanner=scanner,
+                        api_key=api_key,
+                        telegram_token=telegram_token,
+                        telegram_chat_id=telegram_chat_id,
+                        log=log,
+                    )
+                elif event == EventType.NY_OPEN:
+                    _handle_session_open(
+                        session="NY",
+                        symbol=symbol,
+                        lookback_m15=args.lookback_15m,
+                        scanner=scanner,
+                        api_key=api_key,
+                        telegram_token=telegram_token,
+                        telegram_chat_id=telegram_chat_id,
+                        log=log,
+                    )
+                elif event == EventType.DAILY_REPORT:
+                    _handle_daily_report(
+                        symbol=symbol,
+                        lookback_h4=args.lookback_4h,
+                        lookback_h1=args.lookback_1h,
+                        lookback_m15=args.lookback_15m,
+                        scanner=scanner,
+                        api_key=api_key,
+                        telegram_token=telegram_token,
+                        telegram_chat_id=telegram_chat_id,
+                        log=log,
+                    )
+            except Exception:  # noqa: BLE001
+                log.exception("Event handler failed: %s", event.value)
 
     log.info("Daemon stopped.")
 
