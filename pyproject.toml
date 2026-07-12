@@ -57,3 +57,11 @@ disallow_untyped_defs = true
 [[tool.mypy.overrides]]
 module = ["pyarrow", "pyarrow.*", "duckdb"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# pyarrow ships its own type stubs starting with newer releases.
+# On older installs the stubs are absent and no-untyped-call fires;
+# on newer installs it doesn't fire and warn_unused_ignores would flag
+# the comments.  Disable warn_unused_ignores here to handle both cases.
+module = ["novax.data.storage.parquet_store"]
+warn_unused_ignores = false
