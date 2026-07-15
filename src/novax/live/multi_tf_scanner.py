@@ -1,4 +1,22 @@
-"""Multi-timeframe signal scanner: 4H WeeklyBOSRetest + 1H GoldPullback + 15M EMACross."""
+"""Multi-timeframe signal scanner: 4H EMA trend + 1H GoldPullback + 15M EMACross.
+
+Confluence definition (v2)
+--------------------------
+  OLD (too strict): h4.signal != FLAT AND h1.signal == h4.signal
+    → required WeeklyBOSRetest (4H) to fire; fires 0-2x per week
+
+  NEW (practical): h4_trend != FLAT AND h1.signal == h4_trend
+    → uses EMA50 direction on 4H as trend bias; fires whenever 1H
+      GoldPullback agrees with the 4H trend; multiple times per day
+
+  WeeklyBOSRetest is still replayed on 4H and its signal/BOS state
+  is preserved in the result for logging and bonus-alert purposes.
+
+SL/TP priority
+--------------
+  1. h4 WeeklyBOSRetest sl/tp — if BOS fired (high conviction)
+  2. h1 GoldPullback sl/tp    — fallback (ATR-based, always present)
+"""
 
 from __future__ import annotations
 
@@ -8,6 +26,7 @@ from typing import Any
 
 from ..data_sources import Bar
 from ..engine import BarView, Position, Signal
+from ..indicators import EMAIndicator
 from ..strategies.ema_cross import EMACross
 from ..strategies.gold_pullback import GoldPullback
 from ..strategies.weekly_bos_retest import WeeklyBOSRetest
@@ -24,22 +43,23 @@ class TFSignal:
     signal: Signal  # LONG | SHORT | FLAT
     last_bar_ts: datetime  # ts of the last bar used
     last_close: float  # close price of the last bar
-    sl: float | None  # SL price — only set by WeeklyBOSRetest on 4H
-    tp: float | None  # TP price — only set by WeeklyBOSRetest on 4H
+    sl: float | None  # SL price
+    tp: float | None  # TP price
     n_bars_used: int
 
 
 @dataclass(frozen=True)
 class MultiTFScanResult:
     symbol: str
-    h4: TFSignal
-    h1: TFSignal
-    m15: TFSignal
-    confluence: bool  # h4 != FLAT and h1.signal == h4.signal
-    direction: Signal  # h4.signal when confluence else FLAT
-    entry_price: float | None  # h4 last_close when confluence else None
-    sl: float | None  # from h4 (WeeklyBOSRetest internal)
-    tp: float | None  # from h4 (WeeklyBOSRetest internal)
+    h4: TFSignal          # WeeklyBOSRetest signal (kept for logging / bonus)
+    h4_trend: Signal      # 4H EMA50 trend direction — gates confluence
+    h1: TFSignal          # GoldPullback signal
+    m15: TFSignal         # EMACross signal (informational)
+    confluence: bool      # h4_trend != FLAT and h1.signal == h4_trend
+    direction: Signal     # h4_trend when confluence else FLAT
+    entry_price: float | None  # h1 last_close when confluence else None
+    sl: float | None      # h4 BOS sl if available, else h1 ATR sl
+    tp: float | None      # h4 BOS tp if available, else h1 ATR tp
     scanned_at: datetime  # UTC timestamp of the scan
 
 
@@ -61,6 +81,7 @@ def _flat_result(symbol: str) -> MultiTFScanResult:
     return MultiTFScanResult(
         symbol=symbol,
         h4=empty,
+        h4_trend=Signal.FLAT,
         h1=empty,
         m15=empty,
         confluence=False,
@@ -89,6 +110,22 @@ def _replay_h4(bars: list[Bar], params: dict[str, Any]) -> TFSignal:
     )
 
 
+def _h4_ema_trend(bars: list[Bar]) -> Signal:
+    """Compute 4H EMA50 trend direction from the full bar series."""
+    ind = EMAIndicator(50)
+    ema_val: float | None = None
+    for b in bars:
+        ema_val = ind.update(b.close)
+    if ema_val is None:
+        return Signal.FLAT
+    last_close = bars[-1].close
+    if last_close > ema_val:
+        return Signal.LONG
+    if last_close < ema_val:
+        return Signal.SHORT
+    return Signal.FLAT
+
+
 def _replay_h1(bars: list[Bar], params: dict[str, Any]) -> TFSignal:
     strat = GoldPullback(**params)
     last_signal = Signal.FLAT
@@ -100,8 +137,8 @@ def _replay_h1(bars: list[Bar], params: dict[str, Any]) -> TFSignal:
         signal=last_signal,
         last_bar_ts=bars[-1].ts,
         last_close=bars[-1].close,
-        sl=None,
-        tp=None,
+        sl=strat._sl,  # noqa: SLF001
+        tp=strat._tp,  # noqa: SLF001
         n_bars_used=len(bars),
     )
 
@@ -127,12 +164,12 @@ def _replay_m15(bars: list[Bar], params: dict[str, Any]) -> TFSignal:
 class MultiTFScanner:
     """Run three strategies on their respective bar series and return a confluent signal.
 
-    4H  — WeeklyBOSRetest (institutional BOS bias + SL/TP)
-    1H  — GoldPullback    (trend confirmation)
-    15M — EMACross        (entry timing; default fast=9, slow=21)
+    4H  — WeeklyBOSRetest (institutional BOS signal, kept for bonus logging)
+          EMA50 direction used for the actual confluence gate
+    1H  — GoldPullback    (trend confirmation + ATR SL/TP)
+    15M — EMACross        (entry timing; default fast=9, slow=21; informational)
 
-    Confluence fires when 4H is non-FLAT and 1H agrees on the same direction.
-    15M is informational and does not gate the alert.
+    Confluence fires when 4H EMA50 trend is non-FLAT and 1H agrees on direction.
     """
 
     def __init__(
@@ -161,18 +198,25 @@ class MultiTFScanner:
             return _flat_result(self._symbol)
 
         h4 = _replay_h4(bars_h4, self._h4_params)
+        h4_trend = _h4_ema_trend(bars_h4)
         h1 = _replay_h1(bars_h1, self._h1_params)
         m15 = _replay_m15(bars_m15, self._m15_params)
 
-        confluence = h4.signal != Signal.FLAT and h1.signal == h4.signal
-        direction = h4.signal if confluence else Signal.FLAT
-        entry_price = bars_h4[-1].close if confluence else None
-        sl = h4.sl if confluence else None
-        tp = h4.tp if confluence else None
+        # Confluence: 4H EMA trend + 1H GoldPullback agree on direction
+        confluence = h4_trend != Signal.FLAT and h1.signal == h4_trend
+        direction = h4_trend if confluence else Signal.FLAT
+        entry_price = bars_h1[-1].close if confluence else None
+
+        # SL/TP: use BOS levels only when BOS signal agrees with EMA trend direction
+        # (prevents a stale SHORT BOS SL/TP being applied to a LONG EMA-trend trade)
+        bos_agrees = h4.signal == h4_trend
+        sl = (h4.sl if bos_agrees and h4.sl is not None else h1.sl) if confluence else None
+        tp = (h4.tp if bos_agrees and h4.tp is not None else h1.tp) if confluence else None
 
         return MultiTFScanResult(
             symbol=self._symbol,
             h4=h4,
+            h4_trend=h4_trend,
             h1=h1,
             m15=m15,
             confluence=confluence,

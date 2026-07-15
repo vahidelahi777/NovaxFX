@@ -505,7 +505,7 @@ class SignalStore:
         Returns the number of rows exported.
         """
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        result = self._con.execute(
+        self._con.execute(
             """
             COPY (
                 SELECT * FROM signals
@@ -522,6 +522,29 @@ class SignalStore:
         n = int(rows[0]) if rows else 0
         log.info("Exported %d signals → %s", n, out_path)
         return n
+
+    def purge_before(self, year: int, month: int) -> int:
+        """Delete all signals strictly before the given year/month.
+
+        Call this AFTER export_month() to keep the live DuckDB lean.
+        Returns the number of rows deleted.
+        """
+        result = self._con.execute(
+            """
+            DELETE FROM signals
+            WHERE ts < make_timestamp(?, ?, 1, 0, 0, 0)
+            """,
+            [year, month],
+        )
+        n = result.fetchone()
+        deleted = int(n[0]) if n else 0
+        log.info("Purged %d signals older than %04d-%02d", deleted, year, month)
+        return deleted
+
+    def total_count(self) -> int:
+        """Return total number of signals in the live store."""
+        row = self._con.execute("SELECT COUNT(*) FROM signals").fetchone()
+        return int(row[0]) if row else 0
 
     def close(self) -> None:
         self._con.close()

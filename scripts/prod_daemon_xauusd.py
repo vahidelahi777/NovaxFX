@@ -33,6 +33,8 @@ import os
 import signal
 import sys
 import threading
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import UTC, datetime, timedelta
@@ -78,7 +80,11 @@ from novax.strategies.weekly_bos_retest import WeeklyBOSRetest
 HEARTBEAT_INTERVAL = timedelta(hours=1)
 
 # Minimum score to send a Telegram alert (50 = MEDIUM threshold)
-_ALERT_SCORE_THRESHOLD = 50
+_ALERT_SCORE_THRESHOLD = 65
+
+# Retry config for TwelveData fetches
+_FETCH_RETRIES = 3
+_FETCH_RETRY_DELAYS = (15, 45, 120)   # seconds between attempts
 
 _shutdown = threading.Event()
 
@@ -137,33 +143,55 @@ def _fetch_all(
     lookback_h1: int,
     lookback_m15: int,
     api_key: str,
-) -> tuple[list, list, list]:
+    log: logging.Logger | None = None,
+) -> tuple[list[object], list[object], list[object]]:
+    """Fetch all three timeframes with retry on network errors.
+
+    Raises the last exception if all attempts fail.
+    """
     now = datetime.now(tz=UTC)
-    bars_h4 = fetch_bars(
-        symbol=symbol,
-        interval="4h",
-        start=now - timedelta(days=lookback_h4),
-        end=now,
-        api_key=api_key,
-    )
-    bars_h1 = fetch_bars(
-        symbol=symbol,
-        interval="1h",
-        start=now - timedelta(days=lookback_h1),
-        end=now,
-        api_key=api_key,
-    )
-    bars_m15 = fetch_bars(
-        symbol=symbol,
-        interval="15min",
-        start=now - timedelta(days=lookback_m15),
-        end=now,
-        api_key=api_key,
-    )
-    return bars_h4, bars_h1, bars_m15
+    last_exc: Exception | None = None
+
+    for attempt in range(_FETCH_RETRIES):
+        if attempt > 0:
+            delay = _FETCH_RETRY_DELAYS[attempt - 1]
+            if log:
+                log.warning(
+                    "Fetch attempt %d/%d failed — retrying in %ds: %s",
+                    attempt, _FETCH_RETRIES, delay, last_exc,
+                )
+            time.sleep(delay)
+
+        try:
+            bars_h4 = fetch_bars(
+                symbol=symbol,
+                interval="4h",
+                start=now - timedelta(days=lookback_h4),
+                end=now,
+                api_key=api_key,
+            )
+            bars_h1 = fetch_bars(
+                symbol=symbol,
+                interval="1h",
+                start=now - timedelta(days=lookback_h1),
+                end=now,
+                api_key=api_key,
+            )
+            bars_m15 = fetch_bars(
+                symbol=symbol,
+                interval="15min",
+                start=now - timedelta(days=lookback_m15),
+                end=now,
+                api_key=api_key,
+            )
+            return bars_h4, bars_h1, bars_m15
+        except (urllib.error.URLError, OSError) as exc:
+            last_exc = exc
+
+    raise last_exc  # type: ignore[misc]
 
 
-def _bos_state_from_h4(bars_h4: list) -> str:
+def _bos_state_from_h4(bars_h4: list[object]) -> str:
     """Replay WeeklyBOSRetest on 4H bars and return the BOS state string."""
     strat = WeeklyBOSRetest()
     flat = Position(direction="FLAT")
@@ -176,13 +204,15 @@ def _bos_state_from_h4(bars_h4: list) -> str:
 def _paper_signal(result: MultiTFScanResult, pos_direction: str) -> Signal:
     """Determine the Signal to pass to PaperTrader based on multi-TF state.
 
-    Entry: only on confirmed multi-TF confluence.
-    Hold/exit: driven by 4H direction so positions survive brief 15M/1H
-    consolidation without premature exit.
+    Entry: only on confirmed multi-TF confluence (h4_trend + 1H agree).
+    Hold/exit: driven by the same h4_trend (EMA50) used to open the trade,
+    so the position stays open as long as the macro trend holds and only
+    exits when EMA50 direction flips — not when the stricter WeeklyBOSRetest
+    drops to FLAT between institutional setups.
     """
     if pos_direction == "FLAT":
         return result.direction if result.confluence else Signal.FLAT
-    return result.h4.signal
+    return result.h4_trend
 
 
 def _to_scan_result(result: MultiTFScanResult, sig: Signal) -> ScanResult:
@@ -236,6 +266,7 @@ def _handle_15m(
     news_gate: NewsGate,
     paper_trader: PaperTrader,
     paper_entry_id: list[str | None],
+    consecutive_failures: list[int],
     score_threshold: int,
     api_key: str,
     telegram_token: str,
@@ -247,9 +278,27 @@ def _handle_15m(
         "Fetching %s bars — 4H:%dd  1H:%dd  15M:%dd",
         symbol, lookback_h4, lookback_h1, lookback_m15,
     )
-    bars_h4, bars_h1, bars_m15 = _fetch_all(
-        symbol, lookback_h4, lookback_h1, lookback_m15, api_key
-    )
+    try:
+        bars_h4, bars_h1, bars_m15 = _fetch_all(
+            symbol, lookback_h4, lookback_h1, lookback_m15, api_key, log=log
+        )
+    except Exception as exc:
+        consecutive_failures[0] += 1
+        log.error(
+            "All fetch retries failed (consecutive=%d): %s",
+            consecutive_failures[0], exc,
+        )
+        # Alert on first failure and every 4th thereafter (avoids spam)
+        if consecutive_failures[0] == 1 or consecutive_failures[0] % 4 == 0:
+            _send_telegram(
+                telegram_token, telegram_chat_id,
+                f"⚠️ *{symbol} Network Error*\n"
+                f"Cannot reach TwelveData ({consecutive_failures[0]} consecutive failures).\n"
+                f"`{type(exc).__name__}: {exc}`",
+                log,
+            )
+        return
+    consecutive_failures[0] = 0   # reset on success
     log.info(
         "Bars fetched — 4H:%d  1H:%d  15M:%d",
         len(bars_h4), len(bars_h1), len(bars_m15),
@@ -272,7 +321,7 @@ def _handle_15m(
     sl_pips: float | None = None
     if result.entry_price is not None and result.sl is not None:
         sl_pips = abs(result.entry_price - result.sl) / _XAUUSD_PIP
-        if result.tp is not None and sl_pips > 0:
+        if result.tp is not None and sl_pips is not None and sl_pips > 0:
             tp_pips = abs(result.tp - result.entry_price) / _XAUUSD_PIP
             rr = tp_pips / sl_pips
 
@@ -365,7 +414,8 @@ def _handle_15m(
 
     if not result.confluence:
         log.info(
-            "No confluence — 4H=%s 1H=%s",
+            "No confluence — 4H_trend=%s BOS=%s 1H=%s",
+            result.h4_trend.value,
             result.h4.signal.value,
             result.h1.signal.value,
         )
@@ -396,7 +446,7 @@ def _handle_15m(
     score_lines = (
         f"\n\n*Signal Score: {sc.total}/100 [{sc.label}]*"
         f"\n  structure={sc.structure}  momentum={sc.momentum}"
-        f"  session={sc.session}  cost={sc.cost}"
+        f"\n  session={sc.session}  cost={sc.cost}"
         f"\n{confidence_label(conf_pct, conf_n)}"
     )
     msg = fmt_confluence_alert(result) + score_lines
@@ -586,6 +636,8 @@ def _handle_daily_report(
     lookback_h1: int,
     lookback_m15: int,
     scanner: MultiTFScanner,
+    signal_store: SignalStore,
+    state_dir: Path,
     api_key: str,
     telegram_token: str,
     telegram_chat_id: str,
@@ -593,7 +645,7 @@ def _handle_daily_report(
 ) -> None:
     now = datetime.now(tz=UTC)
     bars_h4, bars_h1, bars_m15 = _fetch_all(
-        symbol, lookback_h4, lookback_h1, lookback_m15, api_key
+        symbol, lookback_h4, lookback_h1, lookback_m15, api_key, log=log
     )
     if not bars_h1:
         log.warning("daily_report: no bars")
@@ -605,6 +657,25 @@ def _handle_daily_report(
     msg = fmt_daily_report(symbol, result, day_levels, now)
     _send_telegram(telegram_token, telegram_chat_id, msg, log)
     log.info("daily_report sent: %s", symbol)
+
+    # Monthly signal archival — on the 1st of each month, export & purge prior month
+    if now.day == 1:
+        prev_month = now.month - 1 if now.month > 1 else 12
+        prev_year  = now.year if now.month > 1 else now.year - 1
+        archive_path = (
+            state_dir / "signals_archive" / symbol
+            / f"{prev_year}" / f"{prev_month:02d}.parquet"
+        )
+        try:
+            n = signal_store.export_month(prev_year, prev_month, archive_path)
+            signal_store.purge_before(now.year, now.month)
+            total = signal_store.total_count()
+            log.info(
+                "Monthly archive: exported %d signals → %s  (store now has %d rows)",
+                n, archive_path, total,
+            )
+        except Exception:  # noqa: BLE001
+            log.exception("Monthly signal archival failed")
 
 
 # ------------------------------------------------------------------
@@ -660,6 +731,7 @@ def main() -> None:
     news_gate      = NewsGate(api_key=api_key)
     paper_trader   = PaperTrader(state_dir / f"paper_{symbol}.json")
     paper_entry_id: list[str | None] = [None]
+    consecutive_failures: list[int] = [0]
     scanner = MultiTFScanner(
         symbol,
         h4_params={
@@ -733,6 +805,7 @@ def main() -> None:
                         news_gate=news_gate,
                         paper_trader=paper_trader,
                         paper_entry_id=paper_entry_id,
+                        consecutive_failures=consecutive_failures,
                         score_threshold=args.score_threshold,
                         api_key=api_key,
                         telegram_token=telegram_token,
@@ -797,6 +870,8 @@ def main() -> None:
                         lookback_h1=args.lookback_1h,
                         lookback_m15=args.lookback_15m,
                         scanner=scanner,
+                        signal_store=signal_store,
+                        state_dir=state_dir,
                         api_key=api_key,
                         telegram_token=telegram_token,
                         telegram_chat_id=telegram_chat_id,

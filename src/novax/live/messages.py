@@ -44,17 +44,22 @@ def fmt_confluence_alert(result: MultiTFScanResult) -> str:
     m15_label = result.m15.signal.value if result.m15.signal != Signal.FLAT else "FLAT"
     entry_str = f"{result.entry_price:,.2f}" if result.entry_price is not None else "n/a"
 
+    # Show 4H EMA trend (confluence gate) and BOS signal (institutional bonus)
+    bos_label = result.h4.signal.value
+    bos_emoji = "🏛" if result.h4.signal != Signal.FLAT else "—"
+    sl_source = "BOS" if result.h4.sl is not None else "ATR"
+
     lines = [
         f"🔔 *{result.symbol} — Multi-TF Alert*",
         "",
         f"*Direction : {dir_emoji} {direction}*",
         "",
-        f"4H BOS Retest : ✅ {result.h4.signal.value}",
-        f"  SL : {sl_str}",
-        f"  TP : {tp_str}  (RR {rr_str})",
+        f"4H EMA Trend  : ✅ {result.h4_trend.value}",
+        f"4H BOS Signal : {bos_emoji} {bos_label}",
+        f"  SL : {sl_str}  TP : {tp_str}  (RR {rr_str})  [{sl_source}]",
         "",
-        f"1H Pullback   : {h1_emoji} {result.h1.signal.value}  (confirmed)",
-        f"15M EMA Cross : {m15_label}  ⏱ entry timing",
+        f"1H Pullback   : {h1_emoji} {result.h1.signal.value}",
+        f"15M EMA Cross : {m15_label}  ⏱",
         "",
         f"Entry ref : {entry_str}",
         f"Scanned   : {fmt_both(result.scanned_at)}",

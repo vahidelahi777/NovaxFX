@@ -139,18 +139,21 @@ def _score_structure(result: MultiTFScanResult, ceiling: int) -> int:
     Points are distributed proportionally to ceiling so that changing
     the weight via suggest_weights() scales all components together.
 
+    Uses h4_trend (EMA50 direction) — the same signal that gates confluence —
+    so scoring and confluence gate are always evaluating the same condition.
+
     Rules (at ceiling=30)
     ---------------------
-    50%  4H BOS confirmed (h4 not FLAT)
-    33%  1H confirms same direction
-    17%  15M also confirms (triple-TF)
+    50%  4H EMA50 trend is non-FLAT
+    33%  1H GoldPullback confirms same direction
+    17%  15M EMACross also confirms (triple-TF)
     """
     raw = 0
-    if result.h4.signal != Signal.FLAT:
+    if result.h4_trend != Signal.FLAT:
         raw += 15
-    if result.h1.signal == result.h4.signal and result.h4.signal != Signal.FLAT:
+    if result.h1.signal == result.h4_trend and result.h4_trend != Signal.FLAT:
         raw += 10
-    if result.m15.signal == result.h4.signal and result.h4.signal != Signal.FLAT:
+    if result.m15.signal == result.h4_trend and result.h4_trend != Signal.FLAT:
         raw += 5
     # Scale: raw is out of 30; scale to ceiling
     return min(round(raw * ceiling / 30), ceiling)
