@@ -26,7 +26,7 @@ from telegram.ext import (
 
 from . import messages, onboarding
 from .config import BotConfig, load_bot_config
-from .registry import UserRepository, ensure_user
+from .registry import InMemoryUserRepository, UserRepository, ensure_user
 
 __all__ = ["build_application", "run"]
 
@@ -132,7 +132,7 @@ async def _ob_pair_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     state = _get_ob_state(context)
     data: str = query.data or ""
-    value = data[len(onboarding.CB_PREFIX_PAIR):]
+    value = data[len(onboarding.CB_PREFIX_PAIR) :]
 
     if value == onboarding.CB_DONE:
         try:
@@ -165,7 +165,7 @@ async def _ob_ses_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     state = _get_ob_state(context)
     data: str = query.data or ""
-    value = data[len(onboarding.CB_PREFIX_SES):]
+    value = data[len(onboarding.CB_PREFIX_SES) :]
 
     if value == onboarding.CB_DONE:
         try:
@@ -198,7 +198,7 @@ async def _ob_score_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     state = _get_ob_state(context)
     data: str = query.data or ""
-    value_str = data[len(onboarding.CB_PREFIX_SCORE):]
+    value_str = data[len(onboarding.CB_PREFIX_SCORE) :]
 
     try:
         score = int(value_str)
@@ -231,9 +231,7 @@ async def _ob_score_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # ---------------------------------------------------------------------------
 
 
-def build_application(
-    config: BotConfig, repo: UserRepository | None = None
-) -> Application:
+def build_application(config: BotConfig, repo: UserRepository | None = None) -> Application:
     """Construct and wire the Telegram application (no network I/O yet)."""
     app = Application.builder().token(config.token).build()
     if repo is not None:
@@ -245,9 +243,7 @@ def build_application(
     app.add_handler(
         CallbackQueryHandler(_ob_pair_callback, pattern=f"^{onboarding.CB_PREFIX_PAIR}")
     )
-    app.add_handler(
-        CallbackQueryHandler(_ob_ses_callback, pattern=f"^{onboarding.CB_PREFIX_SES}")
-    )
+    app.add_handler(CallbackQueryHandler(_ob_ses_callback, pattern=f"^{onboarding.CB_PREFIX_SES}"))
     app.add_handler(
         CallbackQueryHandler(_ob_score_callback, pattern=f"^{onboarding.CB_PREFIX_SCORE}")
     )
@@ -256,12 +252,21 @@ def build_application(
 
 
 def run() -> None:
-    """Entry point: load config, build the app, and start long-polling."""
+    """Entry point: load config, choose the repo, build the app, and start long-polling."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
     config = load_bot_config()
-    app = build_application(config)
+    repo: UserRepository
+    if config.database_url is not None:
+        from .db_postgres import connect_and_prepare  # lazy: psycopg optional at import time
+
+        repo = connect_and_prepare(config.database_url)
+        logger.info("User registry: PostgresUserRepository")
+    else:
+        repo = InMemoryUserRepository()
+        logger.warning("DATABASE_URL not set — using InMemoryUserRepository (data lost on restart)")
+    app = build_application(config, repo=repo)
     logger.info("Starting NovaxFX product bot (polling); admins=%s", sorted(config.admin_ids))
     app.run_polling(allowed_updates=Update.ALL_TYPES)

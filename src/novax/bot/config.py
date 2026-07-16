@@ -24,10 +24,15 @@ class BotConfig:
 
     token: str
     admin_ids: frozenset[int]
+    database_url: str | None = None
 
     def __repr__(self) -> str:
-        # Redact the token so it never appears in logs or tracebacks.
-        return f"BotConfig(token=***redacted***, admin_ids={sorted(self.admin_ids)})"
+        # Redact token and database_url — both may contain secrets.
+        db = "***redacted***" if self.database_url is not None else None
+        return (
+            f"BotConfig(token=***redacted***, admin_ids={sorted(self.admin_ids)}, "
+            f"database_url={db})"
+        )
 
 
 def _parse_admin_ids(raw: str) -> frozenset[int]:
@@ -55,4 +60,5 @@ def load_bot_config(env: Mapping[str, str] | None = None) -> BotConfig:
             "TELEGRAM_TOKEN is not set. Copy .env.example to .env and fill it in."
         )
     admin_ids = _parse_admin_ids(source.get("TELEGRAM_ADMIN_IDS", ""))
-    return BotConfig(token=token, admin_ids=admin_ids)
+    database_url = source.get("DATABASE_URL", "").strip() or None
+    return BotConfig(token=token, admin_ids=admin_ids, database_url=database_url)

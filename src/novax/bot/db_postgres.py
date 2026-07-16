@@ -19,7 +19,7 @@ import psycopg
 
 from .models import SubscriptionTier, User, UserPrefs
 
-__all__ = ["PostgresUserRepository", "SCHEMA_SQL", "apply_schema"]
+__all__ = ["PostgresUserRepository", "SCHEMA_SQL", "apply_schema", "connect_and_prepare"]
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS bot_users (
@@ -41,6 +41,17 @@ def apply_schema(conn: psycopg.Connection[Any]) -> None:
     with conn.cursor() as cur:
         cur.execute(SCHEMA_SQL)
     conn.commit()
+
+
+def connect_and_prepare(database_url: str) -> PostgresUserRepository:
+    """Open a psycopg connection, apply the schema, and return the repo.
+
+    Called lazily from ``app.run()`` so psycopg is never imported unless
+    ``DATABASE_URL`` is set.
+    """
+    conn: psycopg.Connection[Any] = psycopg.connect(database_url)
+    apply_schema(conn)
+    return PostgresUserRepository(conn)
 
 
 def _row_to_user(row: tuple[Any, ...]) -> User:

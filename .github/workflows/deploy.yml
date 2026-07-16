@@ -15,7 +15,9 @@ name: Deploy
 #   1. The public key matching DEPLOY_KEY must be in ~/.ssh/authorized_keys
 #   2. /opt/NovaxFX must be a git clone of this repo
 #   3. /opt/NovaxFX/.env must contain TWELVEDATA_API_KEY, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID,
-#      TELEGRAM_NOTIF_CHAT_ID; and optionally TELEGRAM_ADMIN_IDS (product-bot admins)
+#      TELEGRAM_NOTIF_CHAT_ID; and optionally TELEGRAM_ADMIN_IDS (product-bot admins).
+#      For the product-bot Postgres registry (DZ2): POSTGRES_USER, POSTGRES_PASSWORD,
+#      POSTGRES_DB, DATABASE_URL (see .env.example for the format).
 #   4. Docker and Docker Compose plugin must be installed
 
 on:
