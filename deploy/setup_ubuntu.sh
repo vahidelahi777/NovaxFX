@@ -19,7 +19,7 @@ apt-get update
 apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
 # 2. Create app directory and copy project
-APP_DIR="/opt/novax"
+APP_DIR="/opt/NovaxFX"
 mkdir -p "${APP_DIR}/data" "${APP_DIR}/logs"
 echo "App directory: ${APP_DIR}"
 

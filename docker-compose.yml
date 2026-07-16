@@ -13,6 +13,15 @@ services:
       --state-dir data/
       --log-file logs/daemon_XAUUSD.log
 
+  product-bot:
+    build: .
+    container_name: novax-product-bot
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./logs:/app/logs
+    command: python scripts/run_bot.py
+
   channel-aggregator:
     build:
       context: .

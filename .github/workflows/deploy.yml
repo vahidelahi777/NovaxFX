@@ -14,7 +14,8 @@ name: Deploy
 # Server-side prerequisites (one-time setup):
 #   1. The public key matching DEPLOY_KEY must be in ~/.ssh/authorized_keys
 #   2. /opt/NovaxFX must be a git clone of this repo
-#   3. /opt/NovaxFX/.env must contain TWELVEDATA_API_KEY, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+#   3. /opt/NovaxFX/.env must contain TWELVEDATA_API_KEY, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID,
+#      TELEGRAM_NOTIF_CHAT_ID; and optionally TELEGRAM_ADMIN_IDS (product-bot admins)
 #   4. Docker and Docker Compose plugin must be installed
 
 on:
@@ -50,7 +51,7 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
-          # Pull latest code, rebuild the image, restart the daemon
+          # Pull latest code, rebuild images, restart services
           script: |
             set -e
             cd /opt/NovaxFX
@@ -60,14 +61,17 @@ jobs:
 
             echo "=== docker compose build ==="
             docker compose build prod-daemon
+            docker compose build product-bot
 
             echo "=== docker compose up ==="
             docker compose up -d prod-daemon
+            docker compose up -d product-bot
 
             echo "=== health check ==="
             sleep 3
             docker ps \
               --filter name=novax-prod-daemon \
+              --filter name=novax-product-bot \
               --format "table {{.Names}}\t{{.Status}}\t{{.RunningFor}}"
 
       - name: Deployment complete
