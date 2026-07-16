@@ -136,6 +136,12 @@ class PostgresUserRepository:
             rows = cur.fetchall()
         return [_row_to_user(r) for r in rows]
 
+    def list_all(self) -> list[User]:
+        with self._conn.cursor() as cur:
+            cur.execute(f"SELECT {_COLUMNS} FROM bot_users ORDER BY telegram_id")
+            rows = cur.fetchall()
+        return [_row_to_user(r) for r in rows]
+
     def count(self) -> int:
         with self._conn.cursor() as cur:
             cur.execute("SELECT count(*) FROM bot_users")

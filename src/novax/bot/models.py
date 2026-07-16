@@ -80,6 +80,7 @@ class User:
     prefs: UserPrefs = field(default_factory=UserPrefs)
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    banned: bool = False
 
     def with_tier(self, tier: SubscriptionTier) -> User:
         return replace(self, tier=tier)

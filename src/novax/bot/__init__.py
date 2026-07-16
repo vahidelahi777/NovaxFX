@@ -10,6 +10,13 @@ daemon. Importing this package does NOT require the optional ``bot`` dependency
 from __future__ import annotations
 
 from .config import BotConfig, MissingTokenError, load_bot_config
+from .fanout import (
+    Recipient,
+    ScoreInfo,
+    SignalInfo,
+    format_signal_message,
+    select_recipients,
+)
 from .messages import (
     DISCLAIMER,
     disclaimer_text,
@@ -66,7 +73,10 @@ __all__ = [
     "MissingTokenError",
     "OnboardingState",
     "OnboardingStep",
+    "Recipient",
     "SCORE_OPTIONS",
+    "ScoreInfo",
+    "SignalInfo",
     "SubscriptionTier",
     "User",
     "UserNotFoundError",
@@ -76,6 +86,7 @@ __all__ = [
     "advance_sessions",
     "disclaimer_text",
     "ensure_user",
+    "format_signal_message",
     "help_text",
     "initial_state",
     "load_bot_config",
@@ -87,6 +98,7 @@ __all__ = [
     "prefs_to_state",
     "render_command",
     "score_keyboard",
+    "select_recipients",
     "sessions_keyboard",
     "set_score",
     "start_text",

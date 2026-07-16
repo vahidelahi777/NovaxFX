@@ -43,6 +43,8 @@ class UserRepository(Protocol):
 
     def list_by_tier(self, tier: SubscriptionTier) -> list[User]: ...
 
+    def list_all(self) -> list[User]: ...
+
     def count(self) -> int: ...
 
 
@@ -101,6 +103,9 @@ class InMemoryUserRepository:
 
     def list_by_tier(self, tier: SubscriptionTier) -> list[User]:
         return [u for u in self._users.values() if u.tier == tier]
+
+    def list_all(self) -> list[User]:
+        return sorted(self._users.values(), key=lambda u: u.telegram_id)
 
     def count(self) -> int:
         return len(self._users)
