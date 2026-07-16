@@ -18,10 +18,15 @@ __all__ = [
     "fmt_heartbeat",
     "fmt_market_close",
     "fmt_market_open",
+    "fmt_market_update_4h",
     "fmt_session_open",
     "fmt_startup",
     "fmt_shutdown",
     "fmt_weekly_report",
+    "fmt_weekly_performance",
+    "fmt_cmd_start",
+    "fmt_cmd_signal",
+    "fmt_cmd_stats",
 ]
 
 
@@ -288,6 +293,154 @@ def fmt_shutdown(symbol: str, now: datetime) -> str:
         f"Time   : {fmt_both(now)}",
         "",
         "Daemon received shutdown signal and exited cleanly.",
+    ]
+    return "\n".join(lines)
+
+
+def fmt_market_update_4h(
+    symbol: str,
+    result: MultiTFScanResult,
+    current_price: float,
+    now: datetime,
+) -> str:
+    """4H market update — posted every 4H even when no trade signal."""
+    trend_emoji = _signal_emoji(result.h4_trend)
+    h1_emoji = _signal_emoji(result.h1.signal)
+    m15_label = result.m15.signal.value if result.m15.signal != Signal.FLAT else "FLAT"
+
+    bias_line = (
+        f"*Confluence active: {trend_emoji} {result.direction.value}*"
+        if result.confluence
+        else "No confluence — watching for setup"
+    )
+
+    lines = [
+        f"🕐 *{symbol} — 4H Market Update*",
+        f"_{fmt_both(now)}_",
+        "",
+        f"Price     : {current_price:,.2f}",
+        f"4H Trend  : {trend_emoji} {result.h4_trend.value}",
+        f"1H Signal : {h1_emoji} {result.h1.signal.value}",
+        f"15M       : {m15_label}",
+        "",
+        bias_line,
+    ]
+    if result.confluence and result.sl and result.tp:
+        lines += [
+            f"SL : {result.sl:,.2f}  TP : {result.tp:,.2f}",
+        ]
+    return "\n".join(lines)
+
+
+def fmt_weekly_performance(
+    symbol: str,
+    total_signals: int,
+    wins: int,
+    losses: int,
+    cum_pnl_pips: float,
+    now: datetime,
+) -> str:
+    """Weekly P&L summary from paper trader — posted Friday."""
+    closed = wins + losses
+    win_rate = (wins / closed * 100) if closed > 0 else 0.0
+    pnl_emoji = "🟢" if cum_pnl_pips >= 0 else "🔴"
+
+    lines = [
+        f"📈 *{symbol} — Weekly Performance*",
+        f"_{fmt_both(now)}_",
+        "",
+        f"Signals this week : {total_signals}",
+        f"Closed trades     : {closed}",
+        f"Win / Loss        : {wins}W  {losses}L",
+        f"Win rate          : {win_rate:.1f}%",
+        f"P&L               : {pnl_emoji} {cum_pnl_pips:+.1f} pips",
+        "",
+        "_Paper trading results — not financial advice._",
+    ]
+    return "\n".join(lines)
+
+
+def fmt_cmd_start(symbol: str) -> str:
+    """Response to /start command."""
+    lines = [
+        "👋 *Welcome to Novax FX Signals*",
+        "",
+        f"Symbol: *{symbol}* (XAU/USD Gold)",
+        "",
+        "*Available commands:*",
+        "/signal — current market state + active setup",
+        "/stats  — signal performance this week",
+        "/help   — show this message",
+        "",
+        "Signals fire automatically on confluence.",
+        "Stay patient — quality over quantity.",
+    ]
+    return "\n".join(lines)
+
+
+def fmt_cmd_signal(
+    symbol: str,
+    result: MultiTFScanResult,
+    current_price: float,
+    now: datetime,
+) -> str:
+    """Response to /signal command — current market state on demand."""
+    trend_emoji = _signal_emoji(result.h4_trend)
+    h1_emoji = _signal_emoji(result.h1.signal)
+    m15_emoji = _signal_emoji(result.m15.signal)
+
+    lines = [
+        f"📊 *{symbol} — Current State*",
+        f"_{fmt_both(now)}_",
+        "",
+        f"Price     : *{current_price:,.2f}*",
+        "",
+        f"4H Trend  : {trend_emoji} {result.h4_trend.value}",
+        f"4H BOS    : {_signal_emoji(result.h4.signal)} {result.h4.signal.value}",
+        f"1H Signal : {h1_emoji} {result.h1.signal.value}",
+        f"15M       : {m15_emoji} {result.m15.signal.value}",
+        "",
+    ]
+    if result.confluence:
+        dir_emoji = "🟢" if result.direction == Signal.LONG else "🔴"
+        sl_str = f"{result.sl:,.2f}" if result.sl else "n/a"
+        tp_str = f"{result.tp:,.2f}" if result.tp else "n/a"
+        lines += [
+            f"*{dir_emoji} CONFLUENCE: {result.direction.value}*",
+            f"SL : {sl_str}  TP : {tp_str}",
+        ]
+    else:
+        lines.append("⚪ No confluence — waiting for alignment")
+    return "\n".join(lines)
+
+
+def fmt_cmd_stats(
+    symbol: str,
+    total: int,
+    wins: int,
+    losses: int,
+    open_count: int,
+    cum_pips: float,
+    now: datetime,
+) -> str:
+    """Response to /stats command."""
+    closed = wins + losses
+    win_rate = (wins / closed * 100) if closed > 0 else 0.0
+    pnl_emoji = "🟢" if cum_pips >= 0 else "🔴"
+
+    lines = [
+        f"📉 *{symbol} — Signal Stats*",
+        f"_{fmt_both(now)}_",
+        "",
+        f"Total signals  : {total}",
+        f"Closed trades  : {closed}",
+        f"  ✅ TP hits   : {wins}",
+        f"  ❌ SL hits   : {losses}",
+        f"  ⏳ Open      : {open_count}",
+        f"Win rate       : {win_rate:.1f}%",
+        f"Cumulative P&L : {pnl_emoji} {cum_pips:+.1f} pips",
+        "",
+        "_Paper trading — not financial advice._",
     ]
     return "\n".join(lines)
 

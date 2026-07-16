@@ -57,7 +57,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from math import sqrt
 from pathlib import Path
 from typing import Any
@@ -114,7 +114,7 @@ class SignalWeights:
 STATIC_WEIGHTS = SignalWeights(structure=30, momentum=30, session=20, cost=20)
 
 
-class SignalStatus(str, Enum):
+class SignalStatus(StrEnum):
     PENDING   = "pending"
     CONFIRMED = "confirmed"
     ACTIVE    = "active"
@@ -400,7 +400,7 @@ class SignalStore:
             "SELECT * FROM signals ORDER BY ts DESC LIMIT ?", [n]
         )
         cols = [d[0] for d in cur.description]
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
+        return [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
 
     def score_breakdown(self) -> list[dict[str, Any]]:
         """Aggregate win rate by score bucket (0–49, 50–69, 70–100)."""
@@ -425,7 +425,7 @@ class SignalStore:
             """
         )
         cols = [d[0] for d in cur.description]
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
+        return [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
 
     def component_correlations(self) -> dict[str, float]:
         """Pearson correlation of each score component with win outcome.
@@ -545,6 +545,21 @@ class SignalStore:
         """Return total number of signals in the live store."""
         row = self._con.execute("SELECT COUNT(*) FROM signals").fetchone()
         return int(row[0]) if row else 0
+
+    def count_by_status(self, status: SignalStatus) -> int:
+        """Return count of signals with the given status."""
+        row = self._con.execute(
+            "SELECT COUNT(*) FROM signals WHERE status = ?", [status.value]
+        ).fetchone()
+        return int(row[0]) if row else 0
+
+    def cumulative_pnl_pips(self) -> float:
+        """Return sum of pnl_pips for all closed (WIN/LOSS) signals."""
+        row = self._con.execute(
+            "SELECT COALESCE(SUM(pnl_pips), 0.0) FROM signals "
+            "WHERE status IN ('win', 'loss') AND pnl_pips IS NOT NULL"
+        ).fetchone()
+        return float(row[0]) if row else 0.0
 
     def close(self) -> None:
         self._con.close()

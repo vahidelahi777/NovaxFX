@@ -24,12 +24,13 @@ __all__ = ["EventScheduler", "EventType", "ScheduledEvent"]
 
 class EventType(Enum):
     BAR_CLOSE_15M = "bar_close_15m"
-    MARKET_OPEN = "market_open"  # Sunday 22:00 UTC
-    MARKET_CLOSE = "market_close"  # Friday 21:00 UTC
-    LONDON_OPEN = "london_open"  # Mon-Fri 08:00 UTC
-    NY_OPEN = "ny_open"  # Mon-Fri 13:00 UTC
-    DAILY_REPORT = "daily_report"  # Mon-Fri 20:00 UTC
-    WEEKLY_REPORT = "weekly_report"  # Friday 21:00 UTC (same fire time as MARKET_CLOSE)
+    MARKET_OPEN = "market_open"        # Sunday 22:00 UTC
+    MARKET_CLOSE = "market_close"      # Friday 21:00 UTC
+    LONDON_OPEN = "london_open"        # Mon-Fri 08:00 UTC
+    NY_OPEN = "ny_open"                # Mon-Fri 13:00 UTC
+    DAILY_REPORT = "daily_report"      # Mon-Fri 20:00 UTC
+    WEEKLY_REPORT = "weekly_report"    # Friday 21:00 UTC (same fire time as MARKET_CLOSE)
+    MARKET_UPDATE_4H = "market_update_4h"  # every 4H: 00/04/08/12/16/20 UTC
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,7 @@ class EventScheduler:
             (_next_business_day_time(now, 8, 0), EventType.LONDON_OPEN),
             (_next_business_day_time(now, 13, 0), EventType.NY_OPEN),
             (_next_business_day_time(now, 20, 0), EventType.DAILY_REPORT),
+            (_next_4h_mark(now), EventType.MARKET_UPDATE_4H),
         ]
 
         earliest = min(t for t, _ in candidates)
@@ -86,6 +88,15 @@ def _next_single_weekday(now: datetime, weekday: int, hour: int, minute: int = 0
     candidate += timedelta(days=days_ahead)
     if candidate <= now_utc:
         candidate += timedelta(weeks=1)
+    return candidate
+
+
+def _next_4h_mark(now: datetime) -> datetime:
+    """Next 4H boundary (00/04/08/12/16/20 UTC), strictly after now."""
+    now_utc = now.astimezone(UTC)
+    current_4h = (now_utc.hour // 4) * 4
+    candidate = now_utc.replace(hour=current_4h, minute=0, second=0, microsecond=0)
+    candidate += timedelta(hours=4)
     return candidate
 
 

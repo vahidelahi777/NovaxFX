@@ -111,17 +111,33 @@ def _replay_h4(bars: list[Bar], params: dict[str, Any]) -> TFSignal:
 
 
 def _h4_ema_trend(bars: list[Bar]) -> Signal:
-    """Compute 4H EMA50 trend direction from the full bar series."""
+    """Compute 4H EMA50 trend direction with slope confirmation.
+
+    Requires both price > EMA50 AND EMA50 sloping upward (or vice versa).
+    A rising price above a flat EMA = choppy market → FLAT.
+    Slope is measured over the last 5 bars (20H on 4H chart).
+    Minimum slope: 0.5 pip per bar to filter ranging markets.
+    """
     ind = EMAIndicator(50)
-    ema_val: float | None = None
+    ema_history: list[float] = []
     for b in bars:
-        ema_val = ind.update(b.close)
-    if ema_val is None:
+        val = ind.update(b.close)
+        if val is not None:
+            ema_history.append(val)
+
+    if len(ema_history) < 6:
         return Signal.FLAT
+
+    ema_now = ema_history[-1]
+    ema_5ago = ema_history[-6]
+    slope_per_bar = (ema_now - ema_5ago) / 5   # pips per 4H bar
+
     last_close = bars[-1].close
-    if last_close > ema_val:
+    _MIN_SLOPE = 0.5   # 0.5 pip/bar minimum slope (gold pip = $0.10)
+
+    if last_close > ema_now and slope_per_bar > _MIN_SLOPE:
         return Signal.LONG
-    if last_close < ema_val:
+    if last_close < ema_now and slope_per_bar < -_MIN_SLOPE:
         return Signal.SHORT
     return Signal.FLAT
 

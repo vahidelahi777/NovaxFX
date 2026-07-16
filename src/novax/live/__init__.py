@@ -5,14 +5,19 @@ from .event_scheduler import EventScheduler, EventType, ScheduledEvent
 from .intraday_tracker import BarLevels, compute_day_levels, compute_week_levels, current_week_start
 from .level_store import LevelStore, SignalRecord, WeeklyLevel
 from .messages import (
+    fmt_cmd_signal,
+    fmt_cmd_start,
+    fmt_cmd_stats,
     fmt_confluence_alert,
     fmt_daily_report,
     fmt_heartbeat,
     fmt_market_close,
     fmt_market_open,
+    fmt_market_update_4h,
     fmt_session_open,
     fmt_shutdown,
     fmt_startup,
+    fmt_weekly_performance,
     fmt_weekly_report,
 )
 from .multi_tf_scanner import MultiTFScanner, MultiTFScanResult, TFSignal
@@ -74,15 +79,20 @@ __all__ = [
     "compute_week_levels",
     "current_week_start",
     "fmt_both",
+    "fmt_cmd_signal",
+    "fmt_cmd_start",
+    "fmt_cmd_stats",
     "fmt_confluence_alert",
     "fmt_daily_report",
     "fmt_heartbeat",
     "fmt_market_close",
     "fmt_market_open",
+    "fmt_market_update_4h",
     "fmt_session_open",
     "fmt_startup",
     "fmt_shutdown",
     "fmt_tehran",
     "fmt_utc",
+    "fmt_weekly_performance",
     "fmt_weekly_report",
 ]

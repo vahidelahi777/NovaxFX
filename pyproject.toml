@@ -25,6 +25,11 @@ dev = [
 prod = [
     "pyarrow>=14.0",
     "duckdb>=0.10",
+    "python-telegram-bot>=21.0",
+]
+aggregator = [
+    "telethon>=1.36",
+    "anthropic>=0.30",
 ]
 dashboard = [
     "streamlit>=1.27",
@@ -56,6 +61,14 @@ disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
 module = ["pyarrow", "pyarrow.*", "duckdb"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["telethon", "telethon.*", "anthropic", "anthropic.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["telegram", "telegram.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

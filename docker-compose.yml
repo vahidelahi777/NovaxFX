@@ -13,6 +13,22 @@ services:
       --state-dir data/
       --log-file logs/daemon_XAUUSD.log
 
+  channel-aggregator:
+    build:
+      context: .
+      dockerfile: Dockerfile.aggregator
+    container_name: novax-channel-aggregator
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    command: >
+      python scripts/channel_aggregator.py
+      --channels ${SOURCE_CHANNELS}
+      --session-file data/aggregator.session
+      --log-file logs/aggregator.log
+
   weekly-analysis:
     build: .
     container_name: novax-weekly-analysis

@@ -1,44 +1,44 @@
-"""Production daemon: multi-TF signal scanner with Telegram alerts.
+"""Production daemon: multi-TF signal scanner with Telegram bot.
 
 Event schedule (all UTC → IRST = UTC+3:30):
-  Every 15M bar close  — Multi-TF confluence scan + Telegram alert (if applicable)
-  Sunday    22:00 UTC  — Market-open report with previous-week H/L  (01:30 IRST Mon)
-  Mon-Fri   08:00 UTC  — London-open session alert                  (11:30 IRST)
-  Mon-Fri   13:00 UTC  — NY-open session alert                      (16:30 IRST)
-  Mon-Fri   20:00 UTC  — Daily summary report                       (23:30 IRST)
-  Friday    21:00 UTC  — Market-close + weekly report               (00:30 IRST Sat)
+  Every 15M bar close  — Multi-TF confluence scan + alert (if confluence + score ≥ 70)
+  Every 4H mark        — Market update (price + bias) even without a signal
+  Sunday    22:00 UTC  — Market-open report                           (01:30 IRST Mon)
+  Mon-Fri   08:00 UTC  — London-open session alert                   (11:30 IRST)
+  Mon-Fri   13:00 UTC  — NY-open session alert                       (16:30 IRST)
+  Mon-Fri   20:00 UTC  — Daily summary report                        (23:30 IRST)
+  Friday    21:00 UTC  — Market-close + weekly report + P&L summary  (00:30 IRST Sat)
 
-Usage:
-  python scripts/prod_daemon_xauusd.py \\
-      --symbol XAUUSD \\
-      [--lookback-4h 90] \\
-      [--lookback-1h 45] \\
-      [--lookback-15m 14] \\
-      [--state-dir data/] \\
-      [--log-file logs/daemon_XAUUSD.log]
-      [--score-threshold 50]
+Bot commands (users can type in the Telegram bot chat):
+  /start   — welcome message + command list
+  /signal  — current market state on demand
+  /stats   — this week's win rate and P&L
+  /help    — same as /start
 
 Required env vars:
-  TWELVEDATA_API_KEY   — never passed as a CLI arg or logged
-  TELEGRAM_TOKEN       — never logged
-  TELEGRAM_CHAT_ID     — never logged
+  TWELVEDATA_API_KEY       — never passed as CLI arg or logged
+  TELEGRAM_TOKEN           — bot token, never logged
+  TELEGRAM_CHAT_ID         — trading signals channel
+  TELEGRAM_NOTIF_CHAT_ID   — maintenance channel (startup/shutdown/errors)
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 import logging.handlers
 import os
-import signal
 import sys
-import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+from telegram import Bot, Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 from novax.data.ingest.twelvedata import fetch_bars
 from novax.engine import BarView, Position, Signal
@@ -63,36 +63,88 @@ from novax.live import (
     compute_week_levels,
     confidence_label,
     current_week_start,
+    fmt_cmd_signal,
+    fmt_cmd_start,
+    fmt_cmd_stats,
     fmt_confluence_alert,
     fmt_daily_report,
-    fmt_heartbeat,
     fmt_market_close,
     fmt_market_open,
+    fmt_market_update_4h,
     fmt_session_open,
     fmt_shutdown,
     fmt_startup,
+    fmt_weekly_performance,
     fmt_weekly_report,
     make_signal_id,
     score_signal,
 )
 from novax.strategies.weekly_bos_retest import WeeklyBOSRetest
 
-HEARTBEAT_INTERVAL = timedelta(hours=1)
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
 
-# Minimum score to send a Telegram alert (50 = MEDIUM threshold)
-_ALERT_SCORE_THRESHOLD = 65
-
-# Retry config for TwelveData fetches
+_ALERT_SCORE_THRESHOLD = 70          # raised from 65 — cut MEDIUM signals
 _FETCH_RETRIES = 3
-_FETCH_RETRY_DELAYS = (15, 45, 120)   # seconds between attempts
-
-_shutdown = threading.Event()
-
+_FETCH_RETRY_DELAYS = (15, 45, 120)
 _XAUUSD_PIP = 0.1
 
+# ---------------------------------------------------------------------------
+# Shared state (passed to command handlers via context.bot_data)
+# ---------------------------------------------------------------------------
 
-def _handle_signal(signum: int, frame: object) -> None:  # noqa: ARG001
-    _shutdown.set()
+
+class _State:
+    """All mutable daemon state in one place."""
+
+    def __init__(
+        self,
+        symbol: str,
+        scanner: MultiTFScanner,
+        alert_store: AlertStateStore,
+        level_store: LevelStore,
+        signal_store: SignalStore,
+        news_gate: NewsGate,
+        paper_trader: PaperTrader,
+        event_sched: EventScheduler,
+        lookback_h4: int,
+        lookback_h1: int,
+        lookback_m15: int,
+        api_key: str,
+        chat_id: str,
+        notif_chat_id: str,
+        score_threshold: int,
+        state_dir: Path,
+        log: logging.Logger,
+    ) -> None:
+        self.symbol = symbol
+        self.scanner = scanner
+        self.alert_store = alert_store
+        self.level_store = level_store
+        self.signal_store = signal_store
+        self.news_gate = news_gate
+        self.paper_trader = paper_trader
+        self.event_sched = event_sched
+        self.lookback_h4 = lookback_h4
+        self.lookback_h1 = lookback_h1
+        self.lookback_m15 = lookback_m15
+        self.api_key = api_key
+        self.chat_id = chat_id
+        self.notif_chat_id = notif_chat_id
+        self.score_threshold = score_threshold
+        self.state_dir = state_dir
+        self.log = log
+        self.paper_entry_id: str | None = None
+        self.consecutive_failures: int = 0
+        # last scan result — used by /signal command
+        self.last_result: MultiTFScanResult | None = None
+        self.last_price: float | None = None
+
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
 
 
 def _setup_logging(log_file: str | None) -> logging.Logger:
@@ -114,27 +166,9 @@ def _setup_logging(log_file: str | None) -> logging.Logger:
     return log
 
 
-def _sleep_until(target: datetime) -> None:
-    while not _shutdown.is_set():
-        remaining = (target - datetime.now(tz=UTC)).total_seconds()
-        if remaining <= 0:
-            break
-        _shutdown.wait(timeout=min(1.0, remaining))
-
-
-def _send_telegram(token: str, chat_id: str, text: str, log: logging.Logger) -> None:
-    url = (
-        f"https://api.telegram.org/bot{token}/sendMessage"
-        f"?chat_id={urllib.parse.quote(chat_id)}"
-        f"&text={urllib.parse.quote(text)}"
-        f"&parse_mode=Markdown"
-    )
-    try:
-        with urllib.request.urlopen(url, timeout=10) as resp:  # noqa: S310
-            if resp.status != 200:
-                log.warning("Telegram returned HTTP %s", resp.status)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("Telegram send failed: %s", exc)
+# ---------------------------------------------------------------------------
+# Fetch helpers
+# ---------------------------------------------------------------------------
 
 
 def _fetch_all(
@@ -145,10 +179,6 @@ def _fetch_all(
     api_key: str,
     log: logging.Logger | None = None,
 ) -> tuple[list[object], list[object], list[object]]:
-    """Fetch all three timeframes with retry on network errors.
-
-    Raises the last exception if all attempts fail.
-    """
     now = datetime.now(tz=UTC)
     last_exc: Exception | None = None
 
@@ -161,28 +191,18 @@ def _fetch_all(
                     attempt, _FETCH_RETRIES, delay, last_exc,
                 )
             time.sleep(delay)
-
         try:
             bars_h4 = fetch_bars(
-                symbol=symbol,
-                interval="4h",
-                start=now - timedelta(days=lookback_h4),
-                end=now,
-                api_key=api_key,
+                symbol=symbol, interval="4h",
+                start=now - timedelta(days=lookback_h4), end=now, api_key=api_key,
             )
             bars_h1 = fetch_bars(
-                symbol=symbol,
-                interval="1h",
-                start=now - timedelta(days=lookback_h1),
-                end=now,
-                api_key=api_key,
+                symbol=symbol, interval="1h",
+                start=now - timedelta(days=lookback_h1), end=now, api_key=api_key,
             )
             bars_m15 = fetch_bars(
-                symbol=symbol,
-                interval="15min",
-                start=now - timedelta(days=lookback_m15),
-                end=now,
-                api_key=api_key,
+                symbol=symbol, interval="15min",
+                start=now - timedelta(days=lookback_m15), end=now, api_key=api_key,
             )
             return bars_h4, bars_h1, bars_m15
         except (urllib.error.URLError, OSError) as exc:
@@ -192,7 +212,6 @@ def _fetch_all(
 
 
 def _bos_state_from_h4(bars_h4: list[object]) -> str:
-    """Replay WeeklyBOSRetest on 4H bars and return the BOS state string."""
     strat = WeeklyBOSRetest()
     flat = Position(direction="FLAT")
     for i in range(len(bars_h4)):
@@ -201,22 +220,18 @@ def _bos_state_from_h4(bars_h4: list[object]) -> str:
     return bos.state.value if bos is not None else "idle"
 
 
-def _paper_signal(result: MultiTFScanResult, pos_direction: str) -> Signal:
-    """Determine the Signal to pass to PaperTrader based on multi-TF state.
+# ---------------------------------------------------------------------------
+# Paper trader helpers
+# ---------------------------------------------------------------------------
 
-    Entry: only on confirmed multi-TF confluence (h4_trend + 1H agree).
-    Hold/exit: driven by the same h4_trend (EMA50) used to open the trade,
-    so the position stays open as long as the macro trend holds and only
-    exits when EMA50 direction flips — not when the stricter WeeklyBOSRetest
-    drops to FLAT between institutional setups.
-    """
+
+def _paper_signal(result: MultiTFScanResult, pos_direction: str) -> Signal:
     if pos_direction == "FLAT":
         return result.direction if result.confluence else Signal.FLAT
     return result.h4_trend
 
 
 def _to_scan_result(result: MultiTFScanResult, sig: Signal) -> ScanResult:
-    """Convert MultiTFScanResult to ScanResult for PaperTrader.update()."""
     return ScanResult(
         ts=result.scanned_at,
         symbol=result.symbol,
@@ -234,89 +249,122 @@ def _to_scan_result(result: MultiTFScanResult, sig: Signal) -> ScanResult:
     )
 
 
-def _send_heartbeat(
-    *,
-    symbol: str,
-    now: datetime,
-    next_event_types: list[str],
-    next_event_at: datetime,
-    telegram_token: str,
-    telegram_chat_id: str,
-    log: logging.Logger,
-) -> None:
-    msg = fmt_heartbeat(symbol, now, next_event_types, next_event_at)
-    _send_telegram(telegram_token, telegram_chat_id, msg, log)
-    log.info("Heartbeat sent: %s", symbol)
+# ---------------------------------------------------------------------------
+# Bot command handlers
+# ---------------------------------------------------------------------------
 
 
-# ------------------------------------------------------------------
-# Event handlers
-# ------------------------------------------------------------------
+async def _cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message is None:
+        return
+    state: _State = context.bot_data["state"]
+    await update.message.reply_text(
+        fmt_cmd_start(state.symbol),
+        parse_mode="Markdown",
+    )
 
-def _handle_15m(
-    *,
-    symbol: str,
-    lookback_h4: int,
-    lookback_h1: int,
-    lookback_m15: int,
-    scanner: MultiTFScanner,
-    alert_store: AlertStateStore,
-    level_store: LevelStore,
-    signal_store: SignalStore,
-    news_gate: NewsGate,
-    paper_trader: PaperTrader,
-    paper_entry_id: list[str | None],
-    consecutive_failures: list[int],
-    score_threshold: int,
-    api_key: str,
-    telegram_token: str,
-    telegram_chat_id: str,
-    log: logging.Logger,
-) -> None:
+
+async def _cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _cmd_start(update, context)
+
+
+async def _cmd_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message is None:
+        return
+    state: _State = context.bot_data["state"]
+
+    if state.last_result is None or state.last_price is None:
+        await update.message.reply_text("⏳ Scanner warming up — try again in a few minutes.")
+        return
+
+    msg = fmt_cmd_signal(
+        state.symbol, state.last_result, state.last_price, datetime.now(tz=UTC)
+    )
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+async def _cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message is None:
+        return
+    state: _State = context.bot_data["state"]
+
+    try:
+        # Pull all closed signals from signal_store
+        total = state.signal_store.total_count()
+        wins = state.signal_store.count_by_status(SignalStatus.WIN)
+        losses = state.signal_store.count_by_status(SignalStatus.LOSS)
+        open_count = state.signal_store.count_by_status(SignalStatus.ACTIVE)
+        cum_pips = state.signal_store.cumulative_pnl_pips()
+    except Exception:  # noqa: BLE001
+        state.log.exception("cmd_stats: signal_store query failed")
+        await update.message.reply_text("⚠️ Could not load stats — try again later.")
+        return
+
+    msg = fmt_cmd_stats(
+        state.symbol, total, wins, losses, open_count, cum_pips, datetime.now(tz=UTC)
+    )
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+# ---------------------------------------------------------------------------
+# Event handlers (called from the scheduler loop)
+# ---------------------------------------------------------------------------
+
+
+async def _handle_15m(bot: Bot, state: _State) -> None:
     now = datetime.now(tz=UTC)
-    log.info(
+    state.log.info(
         "Fetching %s bars — 4H:%dd  1H:%dd  15M:%dd",
-        symbol, lookback_h4, lookback_h1, lookback_m15,
+        state.symbol, state.lookback_h4, state.lookback_h1, state.lookback_m15,
     )
     try:
         bars_h4, bars_h1, bars_m15 = _fetch_all(
-            symbol, lookback_h4, lookback_h1, lookback_m15, api_key, log=log
+            state.symbol, state.lookback_h4, state.lookback_h1,
+            state.lookback_m15, state.api_key, log=state.log,
         )
-    except Exception as exc:
-        consecutive_failures[0] += 1
-        log.error(
+    except Exception as exc:  # noqa: BLE001
+        state.consecutive_failures += 1
+        state.log.error(
             "All fetch retries failed (consecutive=%d): %s",
-            consecutive_failures[0], exc,
+            state.consecutive_failures, exc,
         )
-        # Alert on first failure and every 4th thereafter (avoids spam)
-        if consecutive_failures[0] == 1 or consecutive_failures[0] % 4 == 0:
-            _send_telegram(
-                telegram_token, telegram_chat_id,
-                f"⚠️ *{symbol} Network Error*\n"
-                f"Cannot reach TwelveData ({consecutive_failures[0]} consecutive failures).\n"
-                f"`{type(exc).__name__}: {exc}`",
-                log,
+        if state.consecutive_failures == 1 or state.consecutive_failures % 4 == 0:
+            await bot.send_message(
+                chat_id=state.notif_chat_id,
+                text=(
+                    f"⚠️ *{state.symbol} Network Error*\n"
+                    f"Cannot reach TwelveData ({state.consecutive_failures} "
+                    f"consecutive failures).\n`{type(exc).__name__}: {exc}`"
+                ),
+                parse_mode="Markdown",
             )
         return
-    consecutive_failures[0] = 0   # reset on success
-    log.info(
+
+    state.consecutive_failures = 0
+    state.log.info(
         "Bars fetched — 4H:%d  1H:%d  15M:%d",
         len(bars_h4), len(bars_h1), len(bars_m15),
     )
 
-    result: MultiTFScanResult = scanner.scan(bars_h4, bars_h1, bars_m15)
+    result: MultiTFScanResult = state.scanner.scan(bars_h4, bars_h1, bars_m15)
 
-    # Score this scan
-    sc = score_signal(result, now,
-                      w_structure=STATIC_WEIGHTS.structure,
-                      w_momentum=STATIC_WEIGHTS.momentum,
-                      w_session=STATIC_WEIGHTS.session,
-                      w_cost=STATIC_WEIGHTS.cost)
+    # Cache for /signal command
+    if bars_m15:
+        state.last_result = result
+        state.last_price = bars_m15[-1].close
 
-    # Historical confidence from the signal store
-    conf_pct, conf_n, conf_stored_label = signal_store.confidence(sc.total, regime="unknown")
+    sc = score_signal(
+        result, now,
+        w_structure=STATIC_WEIGHTS.structure,
+        w_momentum=STATIC_WEIGHTS.momentum,
+        w_session=STATIC_WEIGHTS.session,
+        w_cost=STATIC_WEIGHTS.cost,
+    )
 
-    # Derived risk metrics
+    conf_pct, conf_n, conf_stored_label = state.signal_store.confidence(
+        sc.total, regime="unknown"
+    )
+
     rr: float | None = None
     sl_pips: float | None = None
     if result.entry_price is not None and result.sl is not None:
@@ -325,11 +373,10 @@ def _handle_15m(
             tp_pips = abs(result.tp - result.entry_price) / _XAUUSD_PIP
             rr = tp_pips / sl_pips
 
-    # Persist signal to DuckDB — always, regardless of confluence or score
     sig = StoredSignal(
-        id=make_signal_id(symbol, now, "15m_scan"),
+        id=make_signal_id(state.symbol, now, "15m_scan"),
         ts=now,
-        symbol=symbol,
+        symbol=state.symbol,
         source="15m_scan",
         direction=result.direction.value if result.direction is not None else None,
         h4_signal=result.h4.signal.value,
@@ -348,18 +395,18 @@ def _handle_15m(
         confidence_label=conf_stored_label,
         regime="unknown",
     )
-    signal_store.insert(sig)
+    state.signal_store.insert(sig)
 
-    # Paper trader — run every bar to track virtual P&L
+    # Paper trader
     if bars_m15:
-        paper_sig = _paper_signal(result, paper_trader.position.direction)
+        paper_sig = _paper_signal(result, state.paper_trader.position.direction)
         paper_scan = _to_scan_result(result, paper_sig)
-        ev = paper_trader.update(paper_scan, bars_m15[-1])
+        ev = state.paper_trader.update(paper_scan, bars_m15[-1])  # type: ignore[arg-type]
 
         if ev.kind in (EventKind.ENTRY_LONG, EventKind.ENTRY_SHORT):
-            paper_entry_id[0] = sig.id
-            signal_store.update_status(sig.id, SignalStatus.ACTIVE)
-            log.info(
+            state.paper_entry_id = sig.id
+            state.signal_store.update_status(sig.id, SignalStatus.ACTIVE)
+            state.log.info(
                 "PaperTrader ENTRY %s  entry=%.2f  SL=%s  TP=%s",
                 ev.kind, ev.price,
                 f"{ev.sl:.2f}" if ev.sl else "n/a",
@@ -372,21 +419,23 @@ def _handle_15m(
                 else SignalStatus.LOSS if ev.kind == EventKind.EXIT_SL
                 else SignalStatus.EXPIRED
             )
-            if paper_entry_id[0] is not None:
-                signal_store.update_status(paper_entry_id[0], status, pnl_pips=pnl_pips)
-                paper_entry_id[0] = None
-            log.info(
+            if state.paper_entry_id is not None:
+                state.signal_store.update_status(
+                    state.paper_entry_id, status, pnl_pips=pnl_pips
+                )
+                state.paper_entry_id = None
+            state.log.info(
                 "PaperTrader EXIT  %s  exit=%.2f  pnl=%.1f pips  cum=%.2f",
                 ev.kind, ev.price,
                 pnl_pips if pnl_pips is not None else 0.0,
                 ev.cumulative_pnl,
             )
 
-    # Legacy JSONL store — kept for backward compatibility
-    level_store.append_signal(
+    # Legacy JSONL store
+    state.level_store.append_signal(
         SignalRecord(
             ts=now.isoformat(),
-            symbol=symbol,
+            symbol=state.symbol,
             h4_signal=result.h4.signal.value,
             h1_signal=result.h1.signal.value,
             m15_signal=result.m15.signal.value,
@@ -398,46 +447,49 @@ def _handle_15m(
         )
     )
 
-    log.info(
-        "[%s] 4H=%s 1H=%s 15M=%s conf=%s score=%d[%s] SL=%s TP=%s conf_label=%s",
-        symbol,
-        result.h4.signal.value,
+    state.log.info(
+        "[%s] 4H_trend=%s 1H=%s 15M=%s conf=%s score=%d[%s]",
+        state.symbol,
+        result.h4_trend.value,
         result.h1.signal.value,
         result.m15.signal.value,
         result.confluence,
         sc.total,
         sc.label,
-        f"{result.sl:.2f}" if result.sl is not None else "n/a",
-        f"{result.tp:.2f}" if result.tp is not None else "n/a",
-        conf_stored_label,
     )
 
     if not result.confluence:
-        log.info(
+        state.log.info(
             "No confluence — 4H_trend=%s BOS=%s 1H=%s",
-            result.h4_trend.value,
-            result.h4.signal.value,
-            result.h1.signal.value,
+            result.h4_trend.value, result.h4.signal.value, result.h1.signal.value,
         )
         return
 
-    # Score gate — low-confidence setups never reach Telegram
-    if sc.total < score_threshold:
-        log.info(
+    # Hard gate: 15M EMACross must confirm direction
+    if result.m15.signal != result.direction:
+        state.log.info(
+            "No alert: 15M=%s does not confirm direction=%s",
+            result.m15.signal.value, result.direction.value,
+        )
+        return
+
+    if sc.total < state.score_threshold:
+        state.log.info(
             "No alert: score %d < threshold %d [%s]",
-            sc.total, score_threshold, sc.label,
+            sc.total, state.score_threshold, sc.label,
         )
         return
 
-    # News gate — suppress during high-impact events
-    if news_gate.is_blocked(now):
-        log.info("No alert: signal blocked by news gate (%s %s)", symbol, now.strftime("%H:%M UTC"))
+    if state.news_gate.is_blocked(now):
+        state.log.info(
+            "No alert: signal blocked by news gate (%s %s)",
+            state.symbol, now.strftime("%H:%M UTC"),
+        )
         return
 
-    # Duplicate gate — one alert per H4 bar per direction
-    state = alert_store.load()
-    if state.is_duplicate(result.direction.value, result.h4.last_bar_ts):
-        log.info(
+    alert_state = state.alert_store.load()
+    if alert_state.is_duplicate(result.direction.value, result.h4.last_bar_ts):
+        state.log.info(
             "No alert: same signal already sent for this H4 bar (%s)",
             result.h4.last_bar_ts,
         )
@@ -450,50 +502,65 @@ def _handle_15m(
         f"\n{confidence_label(conf_pct, conf_n)}"
     )
     msg = fmt_confluence_alert(result) + score_lines
-    _send_telegram(telegram_token, telegram_chat_id, msg, log)
-    state.update(result.direction.value, result.h4.last_bar_ts)
-    alert_store.save(state)
-    log.info("Alert sent: %s %s score=%d", symbol, result.direction.value, sc.total)
+    await bot.send_message(chat_id=state.chat_id, text=msg, parse_mode="Markdown")
+    alert_state.update(result.direction.value, result.h4.last_bar_ts)
+    state.alert_store.save(alert_state)
+    state.log.info(
+        "Alert sent: %s %s score=%d", state.symbol, result.direction.value, sc.total
+    )
 
 
-def _handle_market_open(
-    *,
-    symbol: str,
-    lookback_h4: int,
-    level_store: LevelStore,
-    api_key: str,
-    telegram_token: str,
-    telegram_chat_id: str,
-    log: logging.Logger,
-) -> None:
+async def _handle_market_update_4h(bot: Bot, state: _State) -> None:
+    """4H market update — price + bias, no trade required."""
+    now = datetime.now(tz=UTC)
+    try:
+        bars_h4, bars_h1, bars_m15 = _fetch_all(
+            state.symbol, state.lookback_h4, state.lookback_h1,
+            state.lookback_m15, state.api_key, log=state.log,
+        )
+    except Exception:  # noqa: BLE001
+        state.log.exception("market_update_4h: fetch failed")
+        return
+
+    if not bars_m15:
+        return
+
+    result = state.scanner.scan(bars_h4, bars_h1, bars_m15)
+    current_price = bars_m15[-1].close  # type: ignore[attr-defined]
+    state.last_result = result
+    state.last_price = current_price
+
+    msg = fmt_market_update_4h(state.symbol, result, current_price, now)
+    await bot.send_message(chat_id=state.chat_id, text=msg, parse_mode="Markdown")
+    state.log.info("4H market update sent: %s price=%.2f", state.symbol, current_price)
+
+
+async def _handle_market_open(bot: Bot, state: _State) -> None:
     now = datetime.now(tz=UTC)
     bars_h4 = fetch_bars(
-        symbol=symbol,
-        interval="4h",
-        start=now - timedelta(days=lookback_h4),
-        end=now,
-        api_key=api_key,
+        symbol=state.symbol, interval="4h",
+        start=now - timedelta(days=state.lookback_h4), end=now,
+        api_key=state.api_key,
     )
     if not bars_h4:
-        log.warning("market_open: no 4H bars returned")
+        state.log.warning("market_open: no 4H bars returned")
         return
 
     prev_week_start = current_week_start(now) - timedelta(weeks=1)
     prev_week_end = current_week_start(now)
     prev_bars = [
         b for b in bars_h4
-        if prev_week_start <= b.ts.astimezone(UTC) < prev_week_end
+        if prev_week_start <= b.ts.astimezone(UTC) < prev_week_end  # type: ignore[attr-defined]
     ]
     prev_week = compute_week_levels(prev_bars, prev_week_start) if prev_bars else None
-
     bos_state = _bos_state_from_h4(bars_h4)
-    last_close = bars_h4[-1].close
+    last_close = bars_h4[-1].close  # type: ignore[attr-defined]
 
     if prev_week is not None:
-        level_store.append_level(
+        state.level_store.append_level(
             WeeklyLevel(
                 week_start=prev_week_start.strftime("%Y-%m-%d"),
-                symbol=symbol,
+                symbol=state.symbol,
                 prev_high=prev_week.high,
                 prev_low=prev_week.low,
                 week_high=None,
@@ -502,42 +569,31 @@ def _handle_market_open(
             )
         )
 
-    msg = fmt_market_open(symbol, prev_week, last_close, bos_state, now)
-    _send_telegram(telegram_token, telegram_chat_id, msg, log)
-    log.info("market_open report sent: %s", symbol)
+    msg = fmt_market_open(state.symbol, prev_week, last_close, bos_state, now)
+    await bot.send_message(chat_id=state.chat_id, text=msg, parse_mode="Markdown")
+    state.log.info("market_open report sent: %s", state.symbol)
 
 
-def _handle_market_close(
-    *,
-    symbol: str,
-    lookback_h4: int,
-    level_store: LevelStore,
-    api_key: str,
-    telegram_token: str,
-    telegram_chat_id: str,
-    log: logging.Logger,
-) -> None:
+async def _handle_market_close(bot: Bot, state: _State) -> None:
     now = datetime.now(tz=UTC)
     bars_h4 = fetch_bars(
-        symbol=symbol,
-        interval="4h",
-        start=now - timedelta(days=lookback_h4),
-        end=now,
-        api_key=api_key,
+        symbol=state.symbol, interval="4h",
+        start=now - timedelta(days=state.lookback_h4), end=now,
+        api_key=state.api_key,
     )
     if not bars_h4:
-        log.warning("market_close: no 4H bars returned")
+        state.log.warning("market_close: no 4H bars returned")
         return
 
     ws = current_week_start(now)
     current_week = compute_week_levels(bars_h4, ws)
-    last_close = bars_h4[-1].close
+    last_close = bars_h4[-1].close  # type: ignore[attr-defined]
 
     if current_week is not None:
-        level_store.append_level(
+        state.level_store.append_level(
             WeeklyLevel(
                 week_start=ws.strftime("%Y-%m-%d"),
-                symbol=symbol,
+                symbol=state.symbol,
                 prev_high=None,
                 prev_low=None,
                 week_high=current_week.high,
@@ -546,145 +602,187 @@ def _handle_market_close(
             )
         )
 
-    msg = fmt_market_close(symbol, current_week, last_close, now)
-    _send_telegram(telegram_token, telegram_chat_id, msg, log)
-    log.info("market_close report sent: %s", symbol)
+    msg = fmt_market_close(state.symbol, current_week, last_close, now)
+    await bot.send_message(chat_id=state.chat_id, text=msg, parse_mode="Markdown")
+    state.log.info("market_close report sent: %s", state.symbol)
 
 
-def _handle_weekly_report(
-    *,
-    symbol: str,
-    lookback_h4: int,
-    api_key: str,
-    telegram_token: str,
-    telegram_chat_id: str,
-    log: logging.Logger,
-) -> None:
+async def _handle_weekly_report(bot: Bot, state: _State) -> None:
     now = datetime.now(tz=UTC)
     bars_h4 = fetch_bars(
-        symbol=symbol,
-        interval="4h",
-        start=now - timedelta(days=lookback_h4),
-        end=now,
-        api_key=api_key,
+        symbol=state.symbol, interval="4h",
+        start=now - timedelta(days=state.lookback_h4), end=now,
+        api_key=state.api_key,
     )
     if not bars_h4:
-        log.warning("weekly_report: no 4H bars returned")
+        state.log.warning("weekly_report: no 4H bars returned")
         return
 
     ws = current_week_start(now)
     current_week = compute_week_levels(bars_h4, ws)
     bos_state = _bos_state_from_h4(bars_h4)
-    last_close = bars_h4[-1].close
+    last_close = bars_h4[-1].close  # type: ignore[attr-defined]
 
-    msg = fmt_weekly_report(symbol, current_week, bos_state, last_close, now)
-    _send_telegram(telegram_token, telegram_chat_id, msg, log)
-    log.info("weekly_report sent: %s", symbol)
+    msg = fmt_weekly_report(state.symbol, current_week, bos_state, last_close, now)
+    await bot.send_message(chat_id=state.chat_id, text=msg, parse_mode="Markdown")
+
+    # Weekly P&L summary
+    try:
+        wins = state.signal_store.count_by_status(SignalStatus.WIN)
+        losses = state.signal_store.count_by_status(SignalStatus.LOSS)
+        total = state.signal_store.total_count()
+        cum_pips = state.signal_store.cumulative_pnl_pips()
+        perf_msg = fmt_weekly_performance(
+            state.symbol, total, wins, losses, cum_pips, now
+        )
+        await bot.send_message(
+            chat_id=state.chat_id, text=perf_msg, parse_mode="Markdown"
+        )
+    except Exception:  # noqa: BLE001
+        state.log.exception("weekly P&L summary failed")
+
+    state.log.info("weekly_report + P&L sent: %s", state.symbol)
 
 
-def _handle_session_open(
-    *,
-    session: str,
-    symbol: str,
-    lookback_m15: int,
-    scanner: MultiTFScanner,
-    api_key: str,
-    telegram_token: str,
-    telegram_chat_id: str,
-    log: logging.Logger,
-) -> None:
+async def _handle_session_open(bot: Bot, state: _State, session: str) -> None:
     now = datetime.now(tz=UTC)
     bars_m15 = fetch_bars(
-        symbol=symbol,
-        interval="15min",
-        start=now - timedelta(days=lookback_m15),
-        end=now,
-        api_key=api_key,
+        symbol=state.symbol, interval="15min",
+        start=now - timedelta(days=state.lookback_m15), end=now,
+        api_key=state.api_key,
     )
     bars_h4 = fetch_bars(
-        symbol=symbol,
-        interval="4h",
-        start=now - timedelta(days=14),
-        end=now,
-        api_key=api_key,
+        symbol=state.symbol, interval="4h",
+        start=now - timedelta(days=14), end=now,
+        api_key=state.api_key,
     )
     bars_h1 = fetch_bars(
-        symbol=symbol,
-        interval="1h",
-        start=now - timedelta(days=7),
-        end=now,
-        api_key=api_key,
+        symbol=state.symbol, interval="1h",
+        start=now - timedelta(days=7), end=now,
+        api_key=state.api_key,
     )
     if not bars_m15:
-        log.warning("%s_open: no bars", session.lower())
+        state.log.warning("%s_open: no bars", session.lower())
         return
 
-    result = scanner.scan(bars_h4, bars_h1, bars_m15)
-    current_price = bars_m15[-1].close
+    result = state.scanner.scan(bars_h4, bars_h1, bars_m15)
+    current_price = bars_m15[-1].close  # type: ignore[attr-defined]
 
     msg = fmt_session_open(
-        symbol, session, current_price, result.h4.signal, result.h1.signal, now
+        state.symbol, session, current_price,
+        result.h4.signal, result.h1.signal, now,
     )
-    _send_telegram(telegram_token, telegram_chat_id, msg, log)
-    log.info("%s open alert sent: %s price=%.2f", session, symbol, current_price)
+    await bot.send_message(chat_id=state.chat_id, text=msg, parse_mode="Markdown")
+    state.log.info(
+        "%s open alert sent: %s price=%.2f", session, state.symbol, current_price
+    )
 
 
-def _handle_daily_report(
-    *,
-    symbol: str,
-    lookback_h4: int,
-    lookback_h1: int,
-    lookback_m15: int,
-    scanner: MultiTFScanner,
-    signal_store: SignalStore,
-    state_dir: Path,
-    api_key: str,
-    telegram_token: str,
-    telegram_chat_id: str,
-    log: logging.Logger,
-) -> None:
+async def _handle_daily_report(bot: Bot, state: _State) -> None:
     now = datetime.now(tz=UTC)
-    bars_h4, bars_h1, bars_m15 = _fetch_all(
-        symbol, lookback_h4, lookback_h1, lookback_m15, api_key, log=log
-    )
-    if not bars_h1:
-        log.warning("daily_report: no bars")
+    try:
+        bars_h4, bars_h1, bars_m15 = _fetch_all(
+            state.symbol, state.lookback_h4, state.lookback_h1,
+            state.lookback_m15, state.api_key, log=state.log,
+        )
+    except Exception:  # noqa: BLE001
+        state.log.exception("daily_report: fetch failed")
         return
 
-    result = scanner.scan(bars_h4, bars_h1, bars_m15)
+    if not bars_h1:
+        state.log.warning("daily_report: no bars")
+        return
+
+    result = state.scanner.scan(bars_h4, bars_h1, bars_m15)
     day_levels = compute_day_levels(bars_h1, now)
 
-    msg = fmt_daily_report(symbol, result, day_levels, now)
-    _send_telegram(telegram_token, telegram_chat_id, msg, log)
-    log.info("daily_report sent: %s", symbol)
+    msg = fmt_daily_report(state.symbol, result, day_levels, now)
+    await bot.send_message(chat_id=state.chat_id, text=msg, parse_mode="Markdown")
+    state.log.info("daily_report sent: %s", state.symbol)
 
-    # Monthly signal archival — on the 1st of each month, export & purge prior month
+    # Monthly archival
     if now.day == 1:
         prev_month = now.month - 1 if now.month > 1 else 12
         prev_year  = now.year if now.month > 1 else now.year - 1
         archive_path = (
-            state_dir / "signals_archive" / symbol
+            state.state_dir / "signals_archive" / state.symbol
             / f"{prev_year}" / f"{prev_month:02d}.parquet"
         )
         try:
-            n = signal_store.export_month(prev_year, prev_month, archive_path)
-            signal_store.purge_before(now.year, now.month)
-            total = signal_store.total_count()
-            log.info(
+            n = state.signal_store.export_month(prev_year, prev_month, archive_path)
+            state.signal_store.purge_before(now.year, now.month)
+            total = state.signal_store.total_count()
+            state.log.info(
                 "Monthly archive: exported %d signals → %s  (store now has %d rows)",
                 n, archive_path, total,
             )
         except Exception:  # noqa: BLE001
-            log.exception("Monthly signal archival failed")
+            state.log.exception("Monthly signal archival failed")
 
 
-# ------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Scheduler loop (runs as background async task alongside PTB polling)
+# ---------------------------------------------------------------------------
+
+
+async def _scheduler_loop(app: Application, state: _State) -> None:  # type: ignore[type-arg]
+    bot: Bot = app.bot
+    shutdown: asyncio.Event = app.bot_data["shutdown"]
+
+    state.log.info("Scheduler loop started")
+
+    while not shutdown.is_set():
+        now = datetime.now(tz=UTC)
+        fire_at, events = state.event_sched.next_events(now)
+
+        wait = (fire_at - now).total_seconds()
+        state.log.info(
+            "Next event(s): %s at %s UTC",
+            [e.value for e in events],
+            fire_at.strftime("%Y-%m-%d %H:%M:%S"),
+        )
+
+        try:
+            await asyncio.wait_for(shutdown.wait(), timeout=max(wait, 0.1))
+            break  # shutdown triggered
+        except TimeoutError:
+            pass  # normal — time to fire
+
+        if shutdown.is_set():
+            break
+
+        for event in events:
+            try:
+                if event == EventType.BAR_CLOSE_15M:
+                    await _handle_15m(bot, state)
+                elif event == EventType.MARKET_UPDATE_4H:
+                    await _handle_market_update_4h(bot, state)
+                elif event == EventType.MARKET_OPEN:
+                    await _handle_market_open(bot, state)
+                elif event == EventType.MARKET_CLOSE:
+                    await _handle_market_close(bot, state)
+                elif event == EventType.WEEKLY_REPORT:
+                    await _handle_weekly_report(bot, state)
+                elif event == EventType.LONDON_OPEN:
+                    await _handle_session_open(bot, state, "London")
+                elif event == EventType.NY_OPEN:
+                    await _handle_session_open(bot, state, "NY")
+                elif event == EventType.DAILY_REPORT:
+                    await _handle_daily_report(bot, state)
+            except Exception:  # noqa: BLE001
+                state.log.exception("Event handler failed: %s", event.value)
+
+    state.log.info("Scheduler loop exited")
+
+
+# ---------------------------------------------------------------------------
 # Main
-# ------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Multi-TF production daemon: 4H BOS + 1H Pullback + 15M EMA."
+        description="Multi-TF production daemon with Telegram bot commands."
     )
     parser.add_argument("--symbol", default="XAUUSD")
     parser.add_argument("--lookback-4h", type=int, default=90)
@@ -692,9 +790,10 @@ def main() -> None:
     parser.add_argument("--lookback-15m", type=int, default=14)
     parser.add_argument("--state-dir", default="data/")
     parser.add_argument("--log-file", default=None)
-    parser.add_argument("--score-threshold", type=int, default=_ALERT_SCORE_THRESHOLD,
-                        help="Minimum signal score (0–100) required to send a Telegram alert")
-    # H4 strategy params
+    parser.add_argument(
+        "--score-threshold", type=int, default=_ALERT_SCORE_THRESHOLD,
+        help="Minimum signal score (0–100) for Telegram alert",
+    )
     parser.add_argument("--ema-fast", type=int, default=20)
     parser.add_argument("--ema-slow", type=int, default=50)
     parser.add_argument("--ob-buffer-pips", type=float, default=5.0)
@@ -709,29 +808,21 @@ def main() -> None:
 
     telegram_token = os.environ.get("TELEGRAM_TOKEN", "")
     telegram_chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
-    if not telegram_token or not telegram_chat_id:
+    telegram_notif_chat_id = os.environ.get("TELEGRAM_NOTIF_CHAT_ID", "")
+    if not telegram_token or not telegram_chat_id or not telegram_notif_chat_id:
         print(
-            "ERROR: TELEGRAM_TOKEN and TELEGRAM_CHAT_ID env vars are required.",
+            "ERROR: TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, and TELEGRAM_NOTIF_CHAT_ID "
+            "env vars are required.",
             file=sys.stderr,
         )
         sys.exit(1)
 
     log = _setup_logging(args.log_file)
 
-    signal.signal(signal.SIGTERM, _handle_signal)
-    signal.signal(signal.SIGINT, _handle_signal)
-
     symbol = args.symbol.upper()
     state_dir = Path(args.state_dir)
     state_dir.mkdir(parents=True, exist_ok=True)
 
-    alert_store    = AlertStateStore(state_dir / f"alert_state_{symbol}.json")
-    level_store    = LevelStore(state_dir / f"levels_{symbol}.jsonl")
-    signal_store   = SignalStore(state_dir / f"signals_{symbol}.duckdb")
-    news_gate      = NewsGate(api_key=api_key)
-    paper_trader   = PaperTrader(state_dir / f"paper_{symbol}.json")
-    paper_entry_id: list[str | None] = [None]
-    consecutive_failures: list[int] = [0]
     scanner = MultiTFScanner(
         symbol,
         h4_params={
@@ -742,152 +833,69 @@ def main() -> None:
             "risk_reward": args.risk_reward,
         },
     )
-    event_sched = EventScheduler()
 
-    log.info("Daemon started (V2) — %s  state-dir=%s", symbol, state_dir)
-
-    # Send startup Telegram — first peek at the event queue for the message
-    first_fire, first_events = event_sched.next_events(datetime.now(tz=UTC))
-    _send_telegram(
-        telegram_token,
-        telegram_chat_id,
-        fmt_startup(
-            symbol=symbol,
-            state_dir=str(state_dir),
-            next_event_types=[e.value for e in first_events],
-            next_event_at=first_fire,
-        ),
-        log,
+    state = _State(
+        symbol=symbol,
+        scanner=scanner,
+        alert_store=AlertStateStore(state_dir / f"alert_state_{symbol}.json"),
+        level_store=LevelStore(state_dir / f"levels_{symbol}.jsonl"),
+        signal_store=SignalStore(state_dir / f"signals_{symbol}.duckdb"),
+        news_gate=NewsGate(api_key=api_key),
+        paper_trader=PaperTrader(state_dir / f"paper_{symbol}.json"),
+        event_sched=EventScheduler(),
+        lookback_h4=args.lookback_4h,
+        lookback_h1=args.lookback_1h,
+        lookback_m15=args.lookback_15m,
+        api_key=api_key,
+        chat_id=telegram_chat_id,
+        notif_chat_id=telegram_notif_chat_id,
+        score_threshold=args.score_threshold,
+        state_dir=state_dir,
+        log=log,
     )
-    log.info("Startup notification sent: %s", symbol)
 
-    last_heartbeat = datetime.now(tz=UTC)
+    shutdown_event = asyncio.Event()
 
-    while not _shutdown.is_set():
-        now = datetime.now(tz=UTC)
-        fire_at, events = event_sched.next_events(now)
-
-        # Hourly heartbeat — fires at the top of any loop iteration where it's due
-        if now - last_heartbeat >= HEARTBEAT_INTERVAL:
-            _send_heartbeat(
+    async def post_init(application: Application) -> None:
+        application.bot_data["state"] = state
+        application.bot_data["shutdown"] = shutdown_event
+        first_fire, first_events = state.event_sched.next_events(datetime.now(tz=UTC))
+        await application.bot.send_message(
+            chat_id=state.notif_chat_id,
+            text=fmt_startup(
                 symbol=symbol,
-                now=now,
-                next_event_types=[e.value for e in events],
-                next_event_at=fire_at,
-                telegram_token=telegram_token,
-                telegram_chat_id=telegram_chat_id,
-                log=log,
-            )
-            last_heartbeat = now
-
-        log.info(
-            "Next event(s): %s at %s UTC",
-            [e.value for e in events],
-            fire_at.strftime("%Y-%m-%d %H:%M:%S"),
+                state_dir=str(state_dir),
+                next_event_types=[e.value for e in first_events],
+                next_event_at=first_fire,
+            ),
+            parse_mode="Markdown",
         )
-        _sleep_until(fire_at)
+        log.info("Startup notification sent: %s", symbol)
+        asyncio.create_task(_scheduler_loop(application, state))
 
-        if _shutdown.is_set():
-            break
+    async def post_stop(application: Application) -> None:
+        shutdown_event.set()
+        await application.bot.send_message(
+            chat_id=state.notif_chat_id,
+            text=fmt_shutdown(symbol, datetime.now(tz=UTC)),
+            parse_mode="Markdown",
+        )
+        log.info("Daemon stopped.")
 
-        for event in events:
-            try:
-                if event == EventType.BAR_CLOSE_15M:
-                    _handle_15m(
-                        symbol=symbol,
-                        lookback_h4=args.lookback_4h,
-                        lookback_h1=args.lookback_1h,
-                        lookback_m15=args.lookback_15m,
-                        scanner=scanner,
-                        alert_store=alert_store,
-                        level_store=level_store,
-                        signal_store=signal_store,
-                        news_gate=news_gate,
-                        paper_trader=paper_trader,
-                        paper_entry_id=paper_entry_id,
-                        consecutive_failures=consecutive_failures,
-                        score_threshold=args.score_threshold,
-                        api_key=api_key,
-                        telegram_token=telegram_token,
-                        telegram_chat_id=telegram_chat_id,
-                        log=log,
-                    )
-                elif event == EventType.MARKET_OPEN:
-                    _handle_market_open(
-                        symbol=symbol,
-                        lookback_h4=args.lookback_4h,
-                        level_store=level_store,
-                        api_key=api_key,
-                        telegram_token=telegram_token,
-                        telegram_chat_id=telegram_chat_id,
-                        log=log,
-                    )
-                elif event == EventType.MARKET_CLOSE:
-                    _handle_market_close(
-                        symbol=symbol,
-                        lookback_h4=args.lookback_4h,
-                        level_store=level_store,
-                        api_key=api_key,
-                        telegram_token=telegram_token,
-                        telegram_chat_id=telegram_chat_id,
-                        log=log,
-                    )
-                elif event == EventType.WEEKLY_REPORT:
-                    _handle_weekly_report(
-                        symbol=symbol,
-                        lookback_h4=args.lookback_4h,
-                        api_key=api_key,
-                        telegram_token=telegram_token,
-                        telegram_chat_id=telegram_chat_id,
-                        log=log,
-                    )
-                elif event == EventType.LONDON_OPEN:
-                    _handle_session_open(
-                        session="London",
-                        symbol=symbol,
-                        lookback_m15=args.lookback_15m,
-                        scanner=scanner,
-                        api_key=api_key,
-                        telegram_token=telegram_token,
-                        telegram_chat_id=telegram_chat_id,
-                        log=log,
-                    )
-                elif event == EventType.NY_OPEN:
-                    _handle_session_open(
-                        session="NY",
-                        symbol=symbol,
-                        lookback_m15=args.lookback_15m,
-                        scanner=scanner,
-                        api_key=api_key,
-                        telegram_token=telegram_token,
-                        telegram_chat_id=telegram_chat_id,
-                        log=log,
-                    )
-                elif event == EventType.DAILY_REPORT:
-                    _handle_daily_report(
-                        symbol=symbol,
-                        lookback_h4=args.lookback_4h,
-                        lookback_h1=args.lookback_1h,
-                        lookback_m15=args.lookback_15m,
-                        scanner=scanner,
-                        signal_store=signal_store,
-                        state_dir=state_dir,
-                        api_key=api_key,
-                        telegram_token=telegram_token,
-                        telegram_chat_id=telegram_chat_id,
-                        log=log,
-                    )
-            except Exception:  # noqa: BLE001
-                log.exception("Event handler failed: %s", event.value)
-
-    # Clean shutdown — notify Telegram
-    _send_telegram(
-        telegram_token,
-        telegram_chat_id,
-        fmt_shutdown(symbol, datetime.now(tz=UTC)),
-        log,
+    app = (
+        Application.builder()
+        .token(telegram_token)
+        .post_init(post_init)
+        .post_stop(post_stop)
+        .build()
     )
-    log.info("Daemon stopped.")
+    app.add_handler(CommandHandler("start",  _cmd_start))
+    app.add_handler(CommandHandler("help",   _cmd_help))
+    app.add_handler(CommandHandler("signal", _cmd_signal))
+    app.add_handler(CommandHandler("stats",  _cmd_stats))
+
+    log.info("Daemon started (V3) — %s  state-dir=%s", symbol, state_dir)
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":

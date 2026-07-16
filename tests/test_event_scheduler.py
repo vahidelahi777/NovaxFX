@@ -172,6 +172,7 @@ class TestEventTypeEnum:
             "ny_open",
             "daily_report",
             "weekly_report",
+            "market_update_4h",
         }
         actual = {e.value for e in EventType}
         assert actual == expected
