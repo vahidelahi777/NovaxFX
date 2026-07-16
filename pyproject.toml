@@ -26,6 +26,7 @@ prod = [
     "pyarrow>=14.0",
     "duckdb>=0.10",
     "python-telegram-bot>=21.0",
+    "psycopg[binary]>=3.1",
 ]
 aggregator = [
     "telethon>=1.36",
@@ -69,6 +70,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["telegram", "telegram.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["psycopg", "psycopg.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
