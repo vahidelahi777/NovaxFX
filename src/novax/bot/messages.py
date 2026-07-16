@@ -14,6 +14,10 @@ __all__ = [
     "DISCLAIMER",
     "disclaimer_text",
     "help_text",
+    "onboarding_done_text",
+    "onboarding_pairs_text",
+    "onboarding_score_text",
+    "onboarding_sessions_text",
     "render_command",
     "start_text",
     "unknown_text",
@@ -56,8 +60,9 @@ def help_text() -> str:
         "*NovaxFX — commands*\n\n"
         "/start — introduction and setup\n"
         "/help — this list\n"
-        "/disclaimer — risk & legal notice\n\n"
-        "_Coming soon:_ /analyze <pair>, /signals, /learn, /settings, /connect."
+        "/disclaimer — risk & legal notice\n"
+        "/settings — update your pairs, sessions, and score threshold\n\n"
+        "_Coming soon:_ /analyze <pair>, /signals, /learn, /connect."
     )
 
 
@@ -69,6 +74,50 @@ def disclaimer_text() -> str:
 def unknown_text() -> str:
     """Reply for an unrecognised command."""
     return "I don't recognise that command. Type /help to see what I can do."
+
+
+def onboarding_pairs_text() -> str:
+    """Prompt shown at the pairs step of onboarding."""
+    return (
+        "*Step 1 of 3 — Pairs*\n\n"
+        "Which currency pairs do you want signals for?\n"
+        "Tap to select/deselect, then press *Done*."
+    )
+
+
+def onboarding_sessions_text() -> str:
+    """Prompt shown at the sessions step."""
+    return (
+        "*Step 2 of 3 — Sessions*\n\n"
+        "Which trading sessions should I cover?\n"
+        "Tap to select/deselect, then press *Done*."
+    )
+
+
+def onboarding_score_text() -> str:
+    """Prompt shown at the score threshold step."""
+    return (
+        "*Step 3 of 3 — Min confidence score*\n\n"
+        "Only signals scoring at or above this threshold will be sent to you.\n\n"
+        "Higher → fewer but higher-quality alerts.\n"
+        "_Recommended: 70_"
+    )
+
+
+def onboarding_done_text(
+    pairs: frozenset[str], sessions: frozenset[str], min_score: int
+) -> str:
+    """Confirmation shown after onboarding (or /settings) completes."""
+    pairs_str = ", ".join(sorted(pairs))
+    sessions_str = ", ".join(sorted(sessions))
+    return (
+        "✅ *Preferences saved!*\n\n"
+        f"Pairs: {pairs_str}\n"
+        f"Sessions: {sessions_str}\n"
+        f"Min score: {min_score}\n\n"
+        "You'll receive signals that match your preferences.\n"
+        "Use /settings at any time to update them."
+    )
 
 
 def render_command(command: str, first_name: str | None = None) -> str:
