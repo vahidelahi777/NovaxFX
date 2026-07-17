@@ -9,6 +9,7 @@ from datetime import datetime
 
 from ..engine import Signal
 from .intraday_tracker import BarLevels
+from .london_sweep_scanner import SweepScanResult
 from .multi_tf_scanner import MultiTFScanResult
 from .tz_utils import fmt_both
 
@@ -27,6 +28,7 @@ __all__ = [
     "fmt_cmd_start",
     "fmt_cmd_signal",
     "fmt_cmd_stats",
+    "fmt_sweep_alert",
 ]
 
 
@@ -68,6 +70,38 @@ def fmt_confluence_alert(result: MultiTFScanResult) -> str:
         "",
         f"Entry ref : {entry_str}",
         f"Scanned   : {fmt_both(result.scanned_at)}",
+    ]
+    return "\n".join(lines)
+
+
+def fmt_sweep_alert(result: SweepScanResult) -> str:
+    """London open sweep-and-reject alert."""
+    direction = result.direction.value
+    dir_emoji = "🟢" if result.signal == Signal.LONG else "🔴"
+
+    sl_str = f"{result.sl:,.2f}" if result.sl is not None else "n/a"
+    tp_str = f"{result.tp:,.2f}" if result.tp is not None else "n/a"
+    entry_str = f"{result.entry_price:,.2f}" if result.entry_price is not None else "n/a"
+    ah_str = f"{result.asian_high:,.2f}" if result.asian_high is not None else "n/a"
+    al_str = f"{result.asian_low:,.2f}" if result.asian_low is not None else "n/a"
+
+    rr_str = "n/a"
+    if result.sl is not None and result.tp is not None and result.entry_price is not None:
+        risk = abs(result.entry_price - result.sl)
+        reward = abs(result.tp - result.entry_price)
+        if risk > 0:
+            rr_str = f"{reward / risk:.1f}"
+
+    lines = [
+        f"🔔 *{result.symbol} — London Sweep Alert*",
+        "",
+        f"*Direction : {dir_emoji} {direction}*",
+        "",
+        f"Asian Range   : {al_str} — {ah_str}",
+        f"Entry ref     : {entry_str}",
+        f"SL : {sl_str}  TP : {tp_str}  (RR {rr_str})",
+        "",
+        f"Scanned : {fmt_both(result.scanned_at)}",
     ]
     return "\n".join(lines)
 

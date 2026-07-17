@@ -76,11 +76,13 @@ from novax.live import (
     fmt_session_open,
     fmt_shutdown,
     fmt_startup,
+    fmt_sweep_alert,
     fmt_weekly_performance,
     fmt_weekly_report,
     make_signal_id,
     score_signal,
 )
+from novax.live.london_sweep_scanner import LondonSweepScanner
 from novax.sessions import primary_session
 from novax.strategies.weekly_bos_retest import WeeklyBOSRetest
 
@@ -105,6 +107,7 @@ class _State:
         self,
         symbol: str,
         scanner: MultiTFScanner,
+        sweep_scanner: LondonSweepScanner,
         alert_store: AlertStateStore,
         level_store: LevelStore,
         signal_store: SignalStore,
@@ -123,6 +126,7 @@ class _State:
     ) -> None:
         self.symbol = symbol
         self.scanner = scanner
+        self.sweep_scanner = sweep_scanner
         self.alert_store = alert_store
         self.level_store = level_store
         self.signal_store = signal_store
@@ -549,6 +553,42 @@ async def _handle_market_update_4h(bot: Bot, state: _State) -> None:
     state.log.info("4H market update sent: %s price=%.2f", state.symbol, current_price)
 
 
+async def _handle_london_sweep(bot: Bot, state: _State) -> None:
+    """London open sweep-and-reject scan — fires at 08:00 UTC Mon–Fri."""
+    now = datetime.now(tz=UTC)
+    try:
+        bars_h1 = fetch_bars(
+            symbol=state.symbol, interval="1h",
+            start=now - timedelta(days=7), end=now,
+            api_key=state.api_key,
+        )
+    except Exception:  # noqa: BLE001
+        state.log.exception("london_sweep: fetch failed")
+        return
+
+    if not bars_h1:
+        state.log.warning("london_sweep: no 1H bars returned")
+        return
+
+    result = state.sweep_scanner.scan(bars_h1)  # type: ignore[arg-type]
+    state.log.info(
+        "London sweep scan: signal=%s  asian_h=%s  asian_l=%s",
+        result.signal.value,
+        f"{result.asian_high:.2f}" if result.asian_high is not None else "n/a",
+        f"{result.asian_low:.2f}" if result.asian_low is not None else "n/a",
+    )
+
+    if not result.confluence:
+        state.log.info("London sweep: no sweep signal (FLAT)")
+        return
+
+    msg = fmt_sweep_alert(result)
+    await bot.send_message(chat_id=state.chat_id, text=msg, parse_mode="Markdown")
+    state.log.info(
+        "London sweep alert sent: %s %s", state.symbol, result.direction.value
+    )
+
+
 async def _handle_market_open(bot: Bot, state: _State) -> None:
     now = datetime.now(tz=UTC)
     bars_h4 = fetch_bars(
@@ -779,6 +819,7 @@ async def _scheduler_loop(app: Application, state: _State) -> None:  # type: ign
                     await _handle_weekly_report(bot, state)
                 elif event == EventType.LONDON_OPEN:
                     await _handle_session_open(bot, state, "London")
+                    await _handle_london_sweep(bot, state)
                 elif event == EventType.NY_OPEN:
                     await _handle_session_open(bot, state, "NY")
                 elif event == EventType.DAILY_REPORT:
@@ -857,10 +898,12 @@ def main() -> None:
             "risk_reward": args.risk_reward,
         },
     )
+    sweep_scanner = LondonSweepScanner(symbol)
 
     state = _State(
         symbol=symbol,
         scanner=scanner,
+        sweep_scanner=sweep_scanner,
         alert_store=AlertStateStore(state_dir / f"alert_state_{symbol}.json"),
         level_store=LevelStore(state_dir / f"levels_{symbol}.jsonl"),
         signal_store=SignalStore(state_dir / f"signals_{symbol}.duckdb"),
