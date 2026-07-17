@@ -36,6 +36,14 @@ dashboard = [
     "streamlit>=1.27",
     "pandas>=2.0",
 ]
+admin = [
+    "fastapi>=0.109",
+    "uvicorn[standard]>=0.27",
+    "jinja2>=3.1",
+    "itsdangerous>=2.1",
+    "argon2-cffi>=23.1",
+    "python-multipart>=0.0.9",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/novax"]
@@ -83,3 +91,15 @@ ignore_missing_imports = true
 # the comments.  Disable warn_unused_ignores here to handle both cases.
 module = ["novax.data.storage.parquet_store"]
 warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = ["uvicorn", "uvicorn.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["argon2", "argon2.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["itsdangerous", "itsdangerous.*"]
+ignore_missing_imports = true
