@@ -19,3 +19,10 @@ dist/
 novaxfx/
 .obsidian/
 .trash/
+
+# macOS
+.DS_Store
+
+# Scratch / canvas files
+*.canvas
+*.base
