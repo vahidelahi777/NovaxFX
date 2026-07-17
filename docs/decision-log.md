@@ -7,6 +7,17 @@
 
 ## 2026-07-16
 
+### D-008 · Stand up an external-source-grounded advisory board
+**Decision:** Add CEO/CTO/CPO advisory notes grounded in real sources (Chan, Davey,
+NautilusTrader, Freqtrade, Cagan, SaaS-pricing research) — see `docs/advisory/` +
+`docs/research/sources-library.md`. Key adopted positions: pricing is a first-class
+project (1% pricing ≈ 12.7% profit); enforce backtest/live parity and add Monte
+Carlo before any live strategy; evaluate position sizing *after* entry/exit; run
+product discovery before building payments/web; revenue (monetizable bot) before
+auto-trading.
+**Rationale:** ground strategy in proven external practice, not just internal opinion.
+**Owner:** Vahid + Claude · **Status:** ✅ Adopted (advisory board)
+
 ### D-007 · Set up the AI "team" as reusable Claude roles
 **Decision:** Operate NovaxFX as an AI-run startup. Roles (CTO, forex-expert, QA, researcher, etc.) are Claude subagents/features, not persistent hires; company memory lives in the repo (`docs/`, decision log, task board).
 **Rationale:** Subagents are stateless; auditable repo-based memory matches the existing artifact trail.

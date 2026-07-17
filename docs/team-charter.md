@@ -6,17 +6,17 @@ How the "company" runs. Each role is a **Claude capability**, not a persistent h
 
 ## Roles → how to invoke → deliverable
 
-| # | Role | Invoke it by saying… | What it does | Output |
-|---|---|---|---|---|
-| 1 | **CEO (advisor)** | "As CEO, should we…" | Direction, prioritization, go/no-go; pressure-tests your calls | Decision in `decision-log.md` |
-| 2 | **CTO** | "As CTO, review the architecture for X" | Architecture, tech-debt, build-vs-buy, security | Design note / ADR |
-| 3 | **CPO / PM / PO** | "Groom the backlog" / "Spec feature X" | Roadmap, prioritized backlog, feature specs, acceptance criteria | Updated task board + spec |
-| 4 | **Full-stack developer** | "Build feature X" | Writes code + tests in the repo | PR-ready code |
-| 5 | **Forex market expert** | "Expert-review this strategy / signal logic" | Validates trading logic, proposes hypotheses, session/risk sanity | Strategy review memo |
-| 6 | **QA / Tester** | "Run QA on this change" | Independent verification subagent: tests, edge cases, regressions | Bug report / sign-off |
-| 7 | **DevOps** | "Handle deploy / CI for X" | Works the existing CI/CD, Docker, Hetzner, monitoring | Green pipeline / runbook |
-| 8 | **Researcher** | "Researcher: review market for X" (or the weekly scheduled task) | Competitors, AI tooling, regs, pricing → concrete plan changes | Memo in `docs/research-log.md` + new tasks |
-| 9 | **Compliance (advisory)** | "Compliance check on X" | Flags custody/advice/licensing risks (general info, not legal advice) | Risk note |
+| #   | Role                      | Invoke it by saying…                                             | What it does                                                          | Output                                     |
+| --- | ------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------ |
+| 1   | **CEO (advisor)**         | "As CEO, should we…"                                             | Direction, prioritization, go/no-go; pressure-tests your calls        | Decision in `decision-log.md`              |
+| 2   | **CTO**                   | "As CTO, review the architecture for X"                          | Architecture, tech-debt, build-vs-buy, security                       | Design note / ADR                          |
+| 3   | **CPO / PM / PO**         | "Groom the backlog" / "Spec feature X"                           | Roadmap, prioritized backlog, feature specs, acceptance criteria      | Updated task board + spec                  |
+| 4   | **Full-stack developer**  | "Build feature X"                                                | Writes code + tests in the repo                                       | PR-ready code                              |
+| 5   | **Forex market expert**   | "Expert-review this strategy / signal logic"                     | Validates trading logic, proposes hypotheses, session/risk sanity     | Strategy review memo                       |
+| 6   | **QA / Tester**           | "Run QA on this change"                                          | Independent verification subagent: tests, edge cases, regressions     | Bug report / sign-off                      |
+| 7   | **DevOps**                | "Handle deploy / CI for X"                                       | Works the existing CI/CD, Docker, Hetzner, monitoring                 | Green pipeline / runbook                   |
+| 8   | **Researcher**            | "Researcher: review market for X" (or the weekly scheduled task) | Competitors, AI tooling, regs, pricing → concrete plan changes        | Memo in `docs/research-log.md` + new tasks |
+| 9   | **Compliance (advisory)** | "Compliance check on X"                                          | Flags custody/advice/licensing risks (general info, not legal advice) | Risk note                                  |
 
 > **Rule:** anything touching validated strategy gates or real money must pass QA (#6) + Forex-expert (#5), and hard risk limits always sit above any AI output (instruction-hierarchy safety).
 

@@ -14,3 +14,8 @@ outputs/
 .venv/
 dist/
 *.egg-info/
+
+# Obsidian vault (local, not versioned)
+novaxfx/
+.obsidian/
+.trash/

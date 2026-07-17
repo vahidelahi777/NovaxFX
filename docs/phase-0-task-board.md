@@ -11,16 +11,17 @@ Legend: 🔴 not started · 🟡 in progress · 🟢 done · Role = who leads (s
 |---|---|---|---|---|
 | A1 | Bot skeleton on python-telegram-bot; `/start`, `/help`, `/disclaimer` | Dev | D-003 confirm | 🟢 done |
 | A2 | User registry (Postgres): users, tiers, prefs, created_at | Dev | A1 | 🟢 done |
-| A3 | Onboarding flow (inline keyboards) → capture pair/session prefs | Dev | A2 | 🔴 next |
+| A3 | Onboarding flow (inline keyboards) → capture pair/session prefs | Dev | A2 | 🟢 done |
 | A4 | Config/secrets: extend `.env`, encrypted per-user secrets store | DevOps | A2 | 🔴 |
 | A5 | Coexist with existing prod daemon (no regressions) | DevOps/QA | A1 | 🟢 done |
 
 ## Epic B — Signals (pillar)
 | ID | Task | Role | Depends on | Status |
 |---|---|---|---|---|
-| B1 | Per-user signal fan-out from existing `signal_store`/`signal_score` | Dev | A2 | 🔴 |
-| B2 | Signal message: entry/SL/TP + 0–100 score + **why** breakdown | Dev | B1 | 🔴 |
-| B3 | Filters: pair, session, min-score; free=delayed, premium=real-time | Dev | B1 | 🔴 |
+| B1 | Per-user signal fan-out from existing `signal_store`/`signal_score` | Dev | A2 | 🟢 done |
+| B2 | Signal message: entry/SL/TP + 0–100 score + **why** breakdown | Dev | B1 | 🟢 done (fanout.format_signal_message) |
+| B3 | Filters: pair, session, min-score; free=delayed, premium=real-time | Dev | B1 | 🟢 done (fanout.select_recipients) |
+| B5 | Wire fan-out into live daemon (session-label reconcile + daemon DB access) | Dev | B1 | 🔴 next |
 | B4 | `/track` — public backtested track record (artifact-trail powered) | Dev+Forex | B2 | 🔴 |
 
 ## Epic C — Learn (pillar)

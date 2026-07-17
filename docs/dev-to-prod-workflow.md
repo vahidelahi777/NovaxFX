@@ -66,5 +66,8 @@ users. Same for the database.
 3. **Path mismatch.** ~~Fixed (DZ3)~~ — both `deploy.yml` and `deploy/setup_ubuntu.sh`
    now use `/opt/NovaxFX`.
 4. **Branch protection** not enforced — enable required PR + CI on `main`. → DZ4.
-```
-```
+5. ~~**channel-aggregator crash-loops** when aggregator secrets absent.~~ Fixed (DZ5) — service is
+   now opt-in via the `aggregator` Compose profile. `docker compose up -d` no longer starts it.
+   Enable on demand: `docker compose --profile aggregator up -d channel-aggregator`.
+   Requires four secrets in `.env`: `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `TELEGRAM_PHONE`,
+   `ANTHROPIC_API_KEY` (see `.env.example` for the commented template).
