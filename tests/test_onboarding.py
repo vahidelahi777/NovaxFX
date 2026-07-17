@@ -110,7 +110,7 @@ def test_advance_sessions_raises_when_empty() -> None:
 def test_advance_sessions_moves_to_score_step() -> None:
     state = toggle_pair(initial_state(), "XAUUSD")
     state = advance_pairs(state)
-    state = toggle_session(state, "NY")
+    state = toggle_session(state, "NEWYORK")
     state = advance_sessions(state)
     assert state.step is OnboardingStep.SCORE
 
@@ -147,7 +147,7 @@ def test_state_to_prefs_uses_selected_values() -> None:
 def test_state_to_prefs_uses_defaults_when_empty() -> None:
     prefs = state_to_prefs(initial_state())
     assert prefs.pairs == frozenset({"XAUUSD"})
-    assert prefs.sessions == frozenset({"LONDON", "NY"})
+    assert prefs.sessions == frozenset({"LONDON", "NEWYORK"})
     assert prefs.min_score == 70
 
 
@@ -165,7 +165,7 @@ def test_prefs_to_state_pre_populates() -> None:
 
 def test_prefs_to_state_roundtrips() -> None:
     prefs = UserPrefs(
-        pairs=frozenset({"XAUUSD", "EURUSD"}), sessions=frozenset({"NY"}), min_score=70
+        pairs=frozenset({"XAUUSD", "EURUSD"}), sessions=frozenset({"NEWYORK"}), min_score=70
     )
     assert state_to_prefs(prefs_to_state(prefs)) == prefs
 
@@ -201,9 +201,11 @@ def test_pairs_keyboard_done_callback_data() -> None:
 def test_sessions_keyboard_has_all_sessions_and_done() -> None:
     state = initial_state()
     rows = sessions_keyboard(state)
-    labels = [row[0][0] for row in rows]
+    # Verify each session has a button (checked via callback data, not display label)
+    cbs = [row[0][1] for row in rows]
     for ses in AVAILABLE_SESSIONS:
-        assert any(ses in label for label in labels)
+        assert any(ses in cb for cb in cbs)
+    labels = [row[0][0] for row in rows]
     assert any("Done" in label for label in labels)
 
 
@@ -257,11 +259,11 @@ def test_full_onboarding_happy_path() -> None:
     state = toggle_pair(state, "EURUSD")
     state = advance_pairs(state)
     state = toggle_session(state, "LONDON")
-    state = toggle_session(state, "NY")
+    state = toggle_session(state, "NEWYORK")
     state = advance_sessions(state)
     state = set_score(state, 70)
     assert state.step is OnboardingStep.DONE
     prefs = state_to_prefs(state)
     assert prefs.pairs == frozenset({"XAUUSD", "EURUSD"})
-    assert prefs.sessions == frozenset({"LONDON", "NY"})
+    assert prefs.sessions == frozenset({"LONDON", "NEWYORK"})
     assert prefs.min_score == 70

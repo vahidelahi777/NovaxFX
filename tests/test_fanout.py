@@ -116,7 +116,7 @@ def test_wrong_pair_excluded() -> None:
 
 
 def test_wrong_session_excluded() -> None:
-    users = [_user(sessions=frozenset({"NY"}))]
+    users = [_user(sessions=frozenset({"NEWYORK"}))]
     result = select_recipients(_signal(), users, _london)  # session_of → "LONDON"
     assert result == []
 
@@ -140,7 +140,7 @@ def test_banned_user_excluded() -> None:
 
 
 def test_off_hours_session_excludes_all() -> None:
-    users = [_user(sessions=frozenset({"LONDON", "NY"}))]
+    users = [_user(sessions=frozenset({"LONDON", "NEWYORK"}))]
     result = select_recipients(_signal(), users, _none)
     assert result == []
 

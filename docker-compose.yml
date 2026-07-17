@@ -21,6 +21,8 @@ services:
     container_name: novax-prod-daemon
     restart: unless-stopped
     env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -29,6 +31,9 @@ services:
       --symbol XAUUSD
       --state-dir data/
       --log-file logs/daemon_XAUUSD.log
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   product-bot:
     build: .
@@ -47,6 +52,7 @@ services:
       context: .
       dockerfile: Dockerfile.aggregator
     container_name: novax-channel-aggregator
+    profiles: ["aggregator"]
     restart: unless-stopped
     env_file: .env
     volumes:

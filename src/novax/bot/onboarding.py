@@ -43,7 +43,9 @@ __all__ = [
 ]
 
 AVAILABLE_PAIRS: tuple[str, ...] = ("EURUSD", "GBPUSD", "USDJPY", "XAUUSD")
-AVAILABLE_SESSIONS: tuple[str, ...] = ("ASIA", "LONDON", "NY", "OVERLAP")
+AVAILABLE_SESSIONS: tuple[str, ...] = ("ASIA", "LONDON", "NEWYORK", "OVERLAP")
+
+_SESSION_LABELS: dict[str, str] = {"NEWYORK": "New York"}
 SCORE_OPTIONS: tuple[int, ...] = (50, 60, 70, 80, 90)
 
 CB_PREFIX_PAIR = "ob_pair:"
@@ -133,7 +135,7 @@ def set_score(state: OnboardingState, score: int) -> OnboardingState:
 def state_to_prefs(state: OnboardingState) -> UserPrefs:
     """Convert onboarding state to ``UserPrefs`` (uses defaults for empty selections)."""
     pairs = state.selected_pairs or frozenset({"XAUUSD"})
-    sessions = state.selected_sessions or frozenset({"LONDON", "NY"})
+    sessions = state.selected_sessions or frozenset({"LONDON", "NEWYORK"})
     score = state.selected_score if state.selected_score is not None else DEFAULT_MIN_SCORE
     return UserPrefs(pairs=pairs, sessions=sessions, min_score=score)
 
@@ -157,8 +159,9 @@ def sessions_keyboard(state: OnboardingState) -> list[list[tuple[str, str]]]:
     """One button per session (one per row) then a Done button."""
     rows: list[list[tuple[str, str]]] = []
     for ses in AVAILABLE_SESSIONS:
+        label = _SESSION_LABELS.get(ses, ses)
         prefix = "✅ " if ses in state.selected_sessions else ""
-        rows.append([(f"{prefix}{ses}", f"{CB_PREFIX_SES}{ses}")])
+        rows.append([(f"{prefix}{label}", f"{CB_PREFIX_SES}{ses}")])
     rows.append([("✔ Done", f"{CB_PREFIX_SES}{CB_DONE}")])
     return rows
 
