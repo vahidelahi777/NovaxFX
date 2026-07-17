@@ -100,8 +100,8 @@ class TSIMomentum:
         bar = view.last
 
         ema_val = self._ema.update(bar.close)
-        tsi_r   = self._tsi.update(bar.close)
-        atr     = self._atr.update(bar.high, bar.low, bar.close)
+        tsi_r = self._tsi.update(bar.close)
+        atr = self._atr.update(bar.high, bar.low, bar.close)
 
         if ema_val is None or tsi_r is None or atr is None:
             return Signal.FLAT
@@ -122,7 +122,7 @@ class TSIMomentum:
             and tsi_now < sig_now
         )
 
-        self._prev_tsi    = tsi_now
+        self._prev_tsi = tsi_now
         self._prev_signal = sig_now
 
         bull_regime = bar.close > ema_val
@@ -137,7 +137,7 @@ class TSIMomentum:
             if self._tp is not None and bar.high >= self._tp:
                 self._sl = self._tp = None
                 return Signal.FLAT
-            if crossed_down:               # TSI momentum reversal → exit
+            if crossed_down:  # TSI momentum reversal → exit
                 self._sl = self._tp = None
                 return Signal.FLAT
             return Signal.LONG
@@ -149,7 +149,7 @@ class TSIMomentum:
             if self._tp is not None and bar.low <= self._tp:
                 self._sl = self._tp = None
                 return Signal.FLAT
-            if crossed_up:                 # TSI momentum reversal → exit
+            if crossed_up:  # TSI momentum reversal → exit
                 self._sl = self._tp = None
                 return Signal.FLAT
             return Signal.SHORT

@@ -68,7 +68,7 @@ class GoldPullback:
     tsi_signal: int = 13
     atr_period: int = 14
     sl_atr_mult: float = 1.5
-    tp_atr_mult: float = 2.25  # RR=1.5 — tighter TP for higher win rate
+    tp_atr_mult: float = 3.0  # RR=2.0 — required for positive expectancy (breakeven=33%)
     pivot_left: int = 5
     pivot_right: int = 5
     # XAU/USD pip_size=0.1, so 1 pip = $0.10.

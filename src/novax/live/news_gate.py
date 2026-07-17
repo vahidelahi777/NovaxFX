@@ -66,7 +66,7 @@ _BASE_URL = "https://api.twelvedata.com/economic_calendar"
 
 # Suppression window around a high-impact event
 _BLOCK_BEFORE = timedelta(minutes=30)
-_BLOCK_AFTER  = timedelta(minutes=15)
+_BLOCK_AFTER = timedelta(minutes=15)
 
 # Cache lifetime — fetch calendar at most once per window
 _CACHE_TTL = timedelta(hours=4)
@@ -136,12 +136,12 @@ class NewsGate:
 
         for ev in events:
             window_start = ev.event_time - self._block_before
-            window_end   = ev.event_time + self._block_after
+            window_end = ev.event_time + self._block_after
             if window_start <= utc_now <= window_end:
                 log.info(
-                    "Signal blocked by news gate: %s %s at %s UTC "
-                    "(window %s – %s)",
-                    ev.currency, ev.name,
+                    "Signal blocked by news gate: %s %s at %s UTC (window %s – %s)",
+                    ev.currency,
+                    ev.name,
                     ev.event_time.strftime("%H:%M"),
                     window_start.strftime("%H:%M"),
                     window_end.strftime("%H:%M"),
@@ -176,15 +176,17 @@ class NewsGate:
 
     def _fetch(self, now: datetime) -> list[EconomicEvent]:
         utc_now = now.astimezone(UTC)
-        start = utc_now - timedelta(hours=1)        # catch events that started recently
-        end   = utc_now + timedelta(hours=24)        # look 24 h ahead
+        start = utc_now - timedelta(hours=1)  # catch events that started recently
+        end = utc_now + timedelta(hours=24)  # look 24 h ahead
 
-        params = urllib.parse.urlencode({
-            "start_date": start.strftime("%Y-%m-%d %H:%M:%S"),
-            "end_date":   end.strftime("%Y-%m-%d %H:%M:%S"),
-            "importance": "high",
-            "apikey":     self._api_key,
-        })
+        params = urllib.parse.urlencode(
+            {
+                "start_date": start.strftime("%Y-%m-%d %H:%M:%S"),
+                "end_date": end.strftime("%Y-%m-%d %H:%M:%S"),
+                "importance": "high",
+                "apikey": self._api_key,
+            }
+        )
         req = urllib.request.Request(
             f"{_BASE_URL}?{params}",
             headers={"User-Agent": "novax-research/1.0"},
@@ -202,7 +204,7 @@ class NewsGate:
         for item in raw_events:
             if not isinstance(item, dict):
                 continue
-            impact   = str(item.get("impact", "")).capitalize()
+            impact = str(item.get("impact", "")).capitalize()
             currency = str(item.get("currency", "")).upper()
 
             if impact != "High":
@@ -218,12 +220,14 @@ class NewsGate:
             except ValueError:
                 continue
 
-            events.append(EconomicEvent(
-                event_time=event_time,
-                name=str(item.get("event", "Unknown")),
-                country=str(item.get("country", "")),
-                impact=impact,
-                currency=currency,
-            ))
+            events.append(
+                EconomicEvent(
+                    event_time=event_time,
+                    name=str(item.get("event", "Unknown")),
+                    country=str(item.get("country", "")),
+                    impact=impact,
+                    currency=currency,
+                )
+            )
 
         return sorted(events, key=lambda e: e.event_time)

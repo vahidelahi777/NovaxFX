@@ -41,7 +41,7 @@ from .multi_tf_scanner import MultiTFScanResult
 __all__ = ["SignalScore", "score_signal", "confidence_label"]
 
 # ── Thresholds ──────────────────────────────────────────────────────────────
-_HIGH_THRESHOLD   = 70
+_HIGH_THRESHOLD = 70
 _MEDIUM_THRESHOLD = 50
 
 # Minimum SL size to be worth the spread cost (XAU/USD pips)
@@ -62,11 +62,11 @@ class SignalScore:
     Default ceiling matches STATIC_WEIGHTS (imported from signal_store).
     """
 
-    total: int          # 0–100
-    structure: int      # 0–weight.structure
-    momentum: int       # 0–weight.momentum
-    session: int        # 0–weight.session
-    cost: int           # 0–weight.cost
+    total: int  # 0–100
+    structure: int  # 0–weight.structure
+    momentum: int  # 0–weight.momentum
+    session: int  # 0–weight.session
+    cost: int  # 0–weight.cost
 
     @property
     def label(self) -> str:
@@ -117,9 +117,9 @@ def score_signal(
     can be improved without touching the others.
     """
     structure = _score_structure(result, w_structure)
-    momentum  = _score_momentum(result, w_momentum)
-    session   = _score_session(now, w_session)
-    cost      = _score_cost(result, w_cost)
+    momentum = _score_momentum(result, w_momentum)
+    session = _score_session(now, w_session)
+    cost = _score_cost(result, w_cost)
 
     total = structure + momentum + session + cost
     return SignalScore(
@@ -132,6 +132,7 @@ def score_signal(
 
 
 # ── Component scorers ────────────────────────────────────────────────────────
+
 
 def _score_structure(result: MultiTFScanResult, ceiling: int) -> int:
     """Structure component — 0 to ceiling (default 30).
@@ -185,18 +186,23 @@ def _score_session(now: datetime, ceiling: int) -> int:
     Proportionally scaled to ceiling.
     """
     utc = now.astimezone(UTC)
-    weekday = utc.weekday()   # 0=Mon … 4=Fri
-    hour    = utc.hour
+    weekday = utc.weekday()  # 0=Mon … 4=Fri
+    hour = utc.hour
 
     if weekday >= 5:
         return 0
 
     # Raw out of 20
-    if 13 <= hour < 17:   raw = 20   # London–NY overlap
-    elif 8 <= hour < 13:  raw = 16   # London only
-    elif 17 <= hour < 22: raw = 14   # NY only
-    elif 0 <= hour < 8:   raw = 8    # Asia
-    else:                 raw = 0    # dead zone 22–24
+    if 13 <= hour < 17:
+        raw = 20  # London–NY overlap
+    elif 8 <= hour < 13:
+        raw = 16  # London only
+    elif 17 <= hour < 22:
+        raw = 14  # NY only
+    elif 0 <= hour < 8:
+        raw = 8  # Asia
+    else:
+        raw = 0  # dead zone 22–24
 
     return min(round(raw * ceiling / 20), ceiling)
 
