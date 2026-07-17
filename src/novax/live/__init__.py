@@ -17,6 +17,7 @@ from .messages import (
     fmt_session_open,
     fmt_shutdown,
     fmt_startup,
+    fmt_sweep_alert,
     fmt_weekly_performance,
     fmt_weekly_report,
 )
@@ -91,6 +92,7 @@ __all__ = [
     "fmt_session_open",
     "fmt_startup",
     "fmt_shutdown",
+    "fmt_sweep_alert",
     "fmt_tehran",
     "fmt_utc",
     "fmt_weekly_performance",
