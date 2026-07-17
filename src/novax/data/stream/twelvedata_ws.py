@@ -37,6 +37,7 @@ Usage
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 from collections.abc import Callable
@@ -163,8 +164,13 @@ class BarBuilder:
         )
         log.debug(
             "Bar complete: %s %s O=%.5f H=%.5f L=%.5f C=%.5f ticks=%d",
-            self._symbol, self._bar_ts.strftime("%H:%M UTC"),
-            bar.open, bar.high, bar.low, bar.close, self._tick_count,
+            self._symbol,
+            self._bar_ts.strftime("%H:%M UTC"),
+            bar.open,
+            bar.high,
+            bar.low,
+            bar.close,
+            self._tick_count,
         )
         try:
             self._on_complete(bar)
@@ -209,7 +215,7 @@ class TwelveDataStream:
         self._heartbeat_interval = heartbeat_interval
 
         self._builders: dict[str, BarBuilder] = {
-            sym: BarBuilder(sym, interval_seconds, lambda b, s=sym: on_bar(s, b))
+            sym: BarBuilder(sym, interval_seconds, lambda b, s=sym: on_bar(s, b))  # type: ignore[misc]
             for sym in symbols
         }
         self._ws: Any = None
@@ -219,7 +225,7 @@ class TwelveDataStream:
     def start(self) -> None:
         """Connect to TwelveData WebSocket and start streaming."""
         try:
-            from twelvedata import TDClient  # type: ignore[import-untyped]
+            from twelvedata import TDClient  # type: ignore[import-not-found]
         except ImportError as exc:
             raise ImportError(
                 "Install the WebSocket extra: pip install 'twelvedata[websocket]'"
@@ -233,7 +239,8 @@ class TwelveDataStream:
         self._ws.connect()
         log.info(
             "TwelveDataStream connected — symbols=%s interval=%ds",
-            self._symbols, self._interval,
+            self._symbols,
+            self._interval,
         )
 
         self._stop_event.clear()
@@ -246,10 +253,8 @@ class TwelveDataStream:
         """Disconnect and stop the heartbeat thread."""
         self._stop_event.set()
         if self._ws is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._ws.disconnect()
-            except Exception:
-                pass
         if self._heartbeat_thread is not None:
             self._heartbeat_thread.join(timeout=5)
         log.info("TwelveDataStream disconnected.")
@@ -268,7 +273,8 @@ class TwelveDataStream:
         elif event_type == "error":
             log.error(
                 "TwelveData WS error %s: %s",
-                event.get("code"), event.get("message"),
+                event.get("code"),
+                event.get("message"),
             )
 
         elif event_type in ("subscribe-status", "heartbeat", "ping"):

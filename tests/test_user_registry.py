@@ -30,7 +30,7 @@ def _fixed_clock() -> datetime:
 def test_userprefs_defaults_are_gold_first() -> None:
     prefs = UserPrefs()
     assert prefs.pairs == frozenset({"XAUUSD"})
-    assert prefs.sessions == frozenset({"LONDON", "NY"})
+    assert prefs.sessions == frozenset({"LONDON", "NEWYORK"})
     assert prefs.min_score == DEFAULT_MIN_SCORE
 
 
@@ -46,7 +46,7 @@ def test_userprefs_rejects_out_of_range_score() -> None:
 
 
 def test_userprefs_roundtrips_through_dict() -> None:
-    prefs = UserPrefs(pairs=frozenset({"EURUSD"}), sessions=frozenset({"NY"}), min_score=80)
+    prefs = UserPrefs(pairs=frozenset({"EURUSD"}), sessions=frozenset({"NEWYORK"}), min_score=80)
     assert UserPrefs.from_dict(prefs.to_dict()) == prefs
 
 

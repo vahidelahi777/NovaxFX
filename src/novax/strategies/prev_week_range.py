@@ -39,8 +39,8 @@ from ..indicators import ATRIndicator, EMAIndicator, TSIIndicator, WeeklyLevelTr
 
 __all__ = ["PrevWeekRange"]
 
-_LONDON_HOURS: frozenset[int] = frozenset(range(7, 13))   # 07:00–12:59 UTC
-_NY_HOURS: frozenset[int] = frozenset(range(13, 21))       # 13:00–20:59 UTC
+_LONDON_HOURS: frozenset[int] = frozenset(range(7, 13))  # 07:00–12:59 UTC
+_NY_HOURS: frozenset[int] = frozenset(range(13, 21))  # 13:00–20:59 UTC
 
 
 @dataclass

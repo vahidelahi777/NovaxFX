@@ -104,9 +104,7 @@ def onboarding_score_text() -> str:
     )
 
 
-def onboarding_done_text(
-    pairs: frozenset[str], sessions: frozenset[str], min_score: int
-) -> str:
+def onboarding_done_text(pairs: frozenset[str], sessions: frozenset[str], min_score: int) -> str:
     """Confirmation shown after onboarding (or /settings) completes."""
     pairs_str = ", ".join(sorted(pairs))
     sessions_str = ", ".join(sorted(sessions))

@@ -51,15 +51,15 @@ class TFSignal:
 @dataclass(frozen=True)
 class MultiTFScanResult:
     symbol: str
-    h4: TFSignal          # WeeklyBOSRetest signal (kept for logging / bonus)
-    h4_trend: Signal      # 4H EMA50 trend direction — gates confluence
-    h1: TFSignal          # GoldPullback signal
-    m15: TFSignal         # EMACross signal (informational)
-    confluence: bool      # h4_trend != FLAT and h1.signal == h4_trend
-    direction: Signal     # h4_trend when confluence else FLAT
+    h4: TFSignal  # WeeklyBOSRetest signal (kept for logging / bonus)
+    h4_trend: Signal  # 4H EMA50 trend direction — gates confluence
+    h1: TFSignal  # GoldPullback signal
+    m15: TFSignal  # EMACross signal (informational)
+    confluence: bool  # h4_trend != FLAT and h1.signal == h4_trend
+    direction: Signal  # h4_trend when confluence else FLAT
     entry_price: float | None  # h1 last_close when confluence else None
-    sl: float | None      # h4 BOS sl if available, else h1 ATR sl
-    tp: float | None      # h4 BOS tp if available, else h1 ATR tp
+    sl: float | None  # h4 BOS sl if available, else h1 ATR sl
+    tp: float | None  # h4 BOS tp if available, else h1 ATR tp
     scanned_at: datetime  # UTC timestamp of the scan
 
 
@@ -130,10 +130,10 @@ def _h4_ema_trend(bars: list[Bar]) -> Signal:
 
     ema_now = ema_history[-1]
     ema_5ago = ema_history[-6]
-    slope_per_bar = (ema_now - ema_5ago) / 5   # pips per 4H bar
+    slope_per_bar = (ema_now - ema_5ago) / 5  # pips per 4H bar
 
     last_close = bars[-1].close
-    _MIN_SLOPE = 0.5   # 0.5 pip/bar minimum slope (gold pip = $0.10)
+    _MIN_SLOPE = 0.5  # 0.5 pip/bar minimum slope (gold pip = $0.10)
 
     if last_close > ema_now and slope_per_bar > _MIN_SLOPE:
         return Signal.LONG

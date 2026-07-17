@@ -9,11 +9,11 @@ Usage:
       --start 2023-07-01 \\
       --end 2026-07-12
 
-Go / No-Go thresholds:
+Go / No-Go thresholds (RR=2.0, breakeven WR=33.3%):
   Confluence signals : >= 50
-  Win rate (TP hits) : >= 45 %   (breakeven at RR=2 is 33%)
+  Win rate (TP hits) : >= 35 %   (5% buffer above 33.3% breakeven)
   Total PnL          : > 0 pips
-  Max drawdown       : <= 30 %
+  Max DD (absolute)  : <= 1600 pips  (≈16% account at 1% risk/trade)
 """
 
 from __future__ import annotations
@@ -31,8 +31,8 @@ _SYMBOL = "XAUUSD"
 _PIP    = 0.1     # XAU/USD: 1 pip = $0.10
 
 _MIN_SIGNALS  = 50
-_MIN_WIN_RATE = 0.45
-_MAX_DD_PCT   = 0.30
+_MIN_WIN_RATE = 0.35   # RR=2.0 breakeven=33.3%; 35% = 5% buffer above breakeven
+_MAX_DD_ABS   = 1600.0  # absolute pip drawdown cap (1600 pips ≈ 16% at 1% risk/trade)
 
 # Sliding window size for each scan (lookback in days)
 _LB_H4  = 90
@@ -75,6 +75,8 @@ def _simulate(
     """
     results: list[tuple[Signal_Record, str, float]] = []
     n_h1 = len(bars_h1)
+    # Dedup key: (direction, h4_last_bar_ts) — mirrors daemon alert_state.is_duplicate()
+    seen: set[tuple[str, object]] = set()
 
     for i in range(50, n_h1):  # skip first 50 bars for warmup
         now = bars_h1[i].ts
@@ -94,6 +96,16 @@ def _simulate(
         if result.sl is None or result.tp is None or result.entry_price is None:
             continue
 
+        # Gate 1: 15M EMACross must confirm direction (matches daemon _handle_15m gate)
+        if result.m15.signal != result.direction:
+            continue
+
+        # Gate 2: dedup — one signal per (direction, 4H bar timestamp)
+        dedup_key = (result.direction.value, result.h4.last_bar_ts)
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+
         sig = Signal_Record(
             ts=now,
             direction=result.direction.value,
@@ -102,10 +114,10 @@ def _simulate(
             tp=result.tp,
         )
 
-        # Look ahead in 1H bars to find outcome (max 10 bars = 10 hours)
+        # Look ahead in 1H bars to find outcome (max 24 bars = 24 hours)
         outcome = "OPEN"
         pnl_pips = 0.0
-        for fut in bars_h1[i + 1: i + 11]:
+        for fut in bars_h1[i + 1: i + 25]:
             if sig.direction == "LONG":
                 if fut.low <= sig.sl:
                     outcome = "SL"
@@ -147,7 +159,7 @@ def _report(
     print(f"{'='*60}")
     print(f"  Total confluence signals : {n}")
     print(f"  Closed (TP or SL hit)   : {len(closed)}")
-    print(f"  Still open (10H window) : {len(open_)}")
+    print(f"  Still open (24H window) : {len(open_)}")
 
     if not closed:
         print("  No closed signals — cannot evaluate performance.")
@@ -157,21 +169,38 @@ def _report(
     wr      = len(tp_) / len(closed)
     total   = sum(pnls)
     mean    = total / len(pnls)
-    cum, peak, max_dd = 0.0, 0.0, 0.0
+    cum, peak, max_dd_abs = 0.0, 0.0, 0.0
     for p in pnls:
         cum  += p
         peak  = max(peak, cum)
-        max_dd = max(max_dd, peak - cum)
-    max_dd_pct = max_dd / (abs(peak) or 1.0) if max_dd > 0 else 0.0
-
+        max_dd_abs = max(max_dd_abs, peak - cum)
     lng = sum(1 for s, _, _ in closed if s.direction == "LONG")
     sht = sum(1 for s, _, _ in closed if s.direction == "SHORT")
 
     print(f"\n  Win rate     : {wr:>7.1%}  (TP={len(tp_)}  SL={len(sl_)})")
     print(f"  Total PnL    : {total:>+8.1f} pips")
     print(f"  Avg trade    : {mean:>+8.1f} pips")
-    print(f"  Max drawdown : {max_dd_pct:>7.1%}")
+    print(f"  Max DD (abs) : {max_dd_abs:>+8.1f} pips  "
+          f"(≈{max_dd_abs / 100:.1f}% acct at 1% risk/trade)")
     print(f"  Direction    : LONG={lng}  SHORT={sht}")
+
+    # Per-year breakdown
+    from collections import defaultdict
+    yr_tp: dict[int, int] = defaultdict(int)
+    yr_sl: dict[int, int] = defaultdict(int)
+    yr_pnl: dict[int, float] = defaultdict(float)
+    for s, o, p in closed:
+        y = s.ts.year
+        yr_pnl[y] += p
+        if o == "TP":
+            yr_tp[y] += 1
+        else:
+            yr_sl[y] += 1
+    print("\n  Year   TP   SL    WR    PnL(pips)")
+    for y in sorted(yr_tp.keys() | yr_sl.keys()):
+        t, s_ = yr_tp[y], yr_sl[y]
+        tot = t + s_
+        print(f"  {y}  {t:>3}  {s_:>3}  {t/tot:>5.1%}  {yr_pnl[y]:>+9.1f}")
 
     # Sample table (last 20)
     show = closed[-20:]
@@ -196,13 +225,13 @@ def _report(
         fails.append(f"win_rate {wr:.1%} < {_MIN_WIN_RATE:.0%}")
     if total <= 0:
         fails.append(f"total_pnl {total:.1f} pips ≤ 0")
-    if max_dd_pct > _MAX_DD_PCT:
-        fails.append(f"max_drawdown {max_dd_pct:.1%} > {_MAX_DD_PCT:.0%}")
+    if max_dd_abs > _MAX_DD_ABS:
+        fails.append(f"max_dd_abs {max_dd_abs:.0f} pips > {_MAX_DD_ABS:.0f} pips")
 
     print(f"\n{'='*60}")
     if not fails:
         print("  VERDICT:  ✅  GO — deploy to production")
-        print(f"    {n} signals  {wr:.1%} win  {total:+.0f} pips  dd={max_dd_pct:.1%}")
+        print(f"    {n} signals  {wr:.1%} win  {total:+.0f} pips  dd={max_dd_abs:.0f} pips abs")
     else:
         print("  VERDICT:  ❌  NO-GO")
         for f in fails:

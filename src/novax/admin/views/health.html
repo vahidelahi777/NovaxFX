@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Health — NovaxFX Admin{% endblock %}
+
+{% block content %}
+<h1>System Health</h1>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr><th>Check</th><th>Value</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>App version</td>
+        <td><code>{{ snapshot.version }}</code></td>
+      </tr>
+      <tr>
+        <td>Server time (UTC)</td>
+        <td>{{ snapshot.time_utc }}</td>
+      </tr>
+      <tr>
+        <td>Database</td>
+        <td>
+          {% if snapshot.db_ok %}
+            <span class="badge-ok">OK</span>
+          {% else %}
+            <span class="badge-err">UNREACHABLE</span>
+          {% endif %}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

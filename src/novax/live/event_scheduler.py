@@ -24,12 +24,12 @@ __all__ = ["EventScheduler", "EventType", "ScheduledEvent"]
 
 class EventType(Enum):
     BAR_CLOSE_15M = "bar_close_15m"
-    MARKET_OPEN = "market_open"        # Sunday 22:00 UTC
-    MARKET_CLOSE = "market_close"      # Friday 21:00 UTC
-    LONDON_OPEN = "london_open"        # Mon-Fri 08:00 UTC
-    NY_OPEN = "ny_open"                # Mon-Fri 13:00 UTC
-    DAILY_REPORT = "daily_report"      # Mon-Fri 20:00 UTC
-    WEEKLY_REPORT = "weekly_report"    # Friday 21:00 UTC (same fire time as MARKET_CLOSE)
+    MARKET_OPEN = "market_open"  # Sunday 22:00 UTC
+    MARKET_CLOSE = "market_close"  # Friday 21:00 UTC
+    LONDON_OPEN = "london_open"  # Mon-Fri 08:00 UTC
+    NY_OPEN = "ny_open"  # Mon-Fri 13:00 UTC
+    DAILY_REPORT = "daily_report"  # Mon-Fri 20:00 UTC
+    WEEKLY_REPORT = "weekly_report"  # Friday 21:00 UTC (same fire time as MARKET_CLOSE)
     MARKET_UPDATE_4H = "market_update_4h"  # every 4H: 00/04/08/12/16/20 UTC
 
 

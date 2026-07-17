@@ -35,8 +35,12 @@ def _norm_pairs(pairs: frozenset[str]) -> frozenset[str]:
     return frozenset(p.strip().upper() for p in pairs if p.strip())
 
 
+_SESSION_ALIASES: dict[str, str] = {"NY": "NEWYORK"}
+
+
 def _norm_sessions(sessions: frozenset[str]) -> frozenset[str]:
-    return frozenset(s.strip().upper() for s in sessions if s.strip())
+    normalised = (s.strip().upper() for s in sessions if s.strip())
+    return frozenset(_SESSION_ALIASES.get(s, s) for s in normalised)
 
 
 @dataclass(frozen=True)
@@ -44,7 +48,7 @@ class UserPrefs:
     """A user's signal-delivery preferences."""
 
     pairs: frozenset[str] = frozenset({"XAUUSD"})
-    sessions: frozenset[str] = frozenset({"LONDON", "NY"})
+    sessions: frozenset[str] = frozenset({"LONDON", "NEWYORK"})
     min_score: int = DEFAULT_MIN_SCORE
 
     def __post_init__(self) -> None:

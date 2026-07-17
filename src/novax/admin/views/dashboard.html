@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — NovaxFX Admin{% endblock %}
+
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="card">
+  <h2>Welcome</h2>
+  <p style="color:#555; font-size:.95rem; line-height:1.6">
+    You are logged in as <strong>{{ admin_user }}</strong>.
+    Use the navigation above to access admin sections.
+  </p>
+</div>
+
+<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:1rem;">
+  <a href="/health" style="text-decoration:none">
+    <div class="card" style="text-align:center; cursor:pointer">
+      <div style="font-size:2rem">⚕️</div>
+      <h2 style="margin-top:.5rem">Health</h2>
+      <p style="color:#777; font-size:.85rem">DB status &amp; app version</p>
+    </div>
+  </a>
+  <div class="card" style="text-align:center; opacity:.5">
+    <div style="font-size:2rem">👥</div>
+    <h2 style="margin-top:.5rem">Users</h2>
+    <p style="color:#777; font-size:.85rem">Coming in H2</p>
+  </div>
+  <div class="card" style="text-align:center; opacity:.5">
+    <div style="font-size:2rem">📊</div>
+    <h2 style="margin-top:.5rem">Signals</h2>
+    <p style="color:#777; font-size:.85rem">Coming in H3</p>
+  </div>
+</div>
+{% endblock %}

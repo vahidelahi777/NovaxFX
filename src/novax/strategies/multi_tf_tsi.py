@@ -106,14 +106,14 @@ class MultiTFTSI:
             raise ValueError(
                 f"tp_atr_mult ({self.tp_atr_mult}) must exceed sl_atr_mult ({self.sl_atr_mult})"
             )
-        self._tsi_1h  = TSIIndicator(self.tsi_long, self.tsi_short, self.tsi_signal)
-        self._ema_1h  = EMAIndicator(self.ema_period)
+        self._tsi_1h = TSIIndicator(self.tsi_long, self.tsi_short, self.tsi_signal)
+        self._ema_1h = EMAIndicator(self.ema_period)
         self._tsi_15m = TSIIndicator(self.tsi_long, self.tsi_short, self.tsi_signal)
         self._atr_15m = ATRIndicator(self.atr_period)
-        self._h1_bias  = "FLAT"
+        self._h1_bias = "FLAT"
         self._cur_hour = None
-        self._h1_high  = 0.0
-        self._h1_low   = float("inf")
+        self._h1_high = 0.0
+        self._h1_low = float("inf")
         self._h1_close = 0.0
         self._prev_tsi = None
         self._prev_sig = None
@@ -133,8 +133,8 @@ class MultiTFTSI:
 
         if self._cur_hour is None:
             self._cur_hour = hour
-            self._h1_high  = bar.high   # type: ignore[attr-defined]
-            self._h1_low   = bar.low    # type: ignore[attr-defined]
+            self._h1_high = bar.high  # type: ignore[attr-defined]
+            self._h1_low = bar.low  # type: ignore[attr-defined]
             self._h1_close = bar.close  # type: ignore[attr-defined]
             return
 
@@ -152,13 +152,13 @@ class MultiTFTSI:
                     self._h1_bias = "FLAT"
 
             self._cur_hour = hour
-            self._h1_high  = bar.high   # type: ignore[attr-defined]
-            self._h1_low   = bar.low    # type: ignore[attr-defined]
+            self._h1_high = bar.high  # type: ignore[attr-defined]
+            self._h1_low = bar.low  # type: ignore[attr-defined]
             self._h1_close = bar.close  # type: ignore[attr-defined]
         else:
-            self._h1_high  = max(self._h1_high, bar.high)   # type: ignore[attr-defined]
-            self._h1_low   = min(self._h1_low,  bar.low)    # type: ignore[attr-defined]
-            self._h1_close = bar.close                       # type: ignore[attr-defined]
+            self._h1_high = max(self._h1_high, bar.high)  # type: ignore[attr-defined]
+            self._h1_low = min(self._h1_low, bar.low)  # type: ignore[attr-defined]
+            self._h1_close = bar.close  # type: ignore[attr-defined]
 
     # ------------------------------------------------------------------
     def on_bar(self, view: BarView, position: Position) -> Signal:
@@ -167,7 +167,7 @@ class MultiTFTSI:
         self._tick_h1(bar)
 
         tsi_r = self._tsi_15m.update(bar.close)
-        atr   = self._atr_15m.update(bar.high, bar.low, bar.close)
+        atr = self._atr_15m.update(bar.high, bar.low, bar.close)
         if tsi_r is None or atr is None:
             return Signal.FLAT
 
@@ -179,22 +179,16 @@ class MultiTFTSI:
         prev_sig = self._prev_sig
 
         crossed_up = (
-            prev_tsi is not None
-            and prev_sig is not None
-            and prev_tsi <= prev_sig
-            and tsi > sig
+            prev_tsi is not None and prev_sig is not None and prev_tsi <= prev_sig and tsi > sig
         )
         crossed_down = (
-            prev_tsi is not None
-            and prev_sig is not None
-            and prev_tsi >= prev_sig
-            and tsi < sig
+            prev_tsi is not None and prev_sig is not None and prev_tsi >= prev_sig and tsi < sig
         )
 
         # OB/OS classification of the bar that just produced the crossover
-        was_ob_extreme  = prev_tsi is not None and prev_tsi >  self.ob_extreme
-        was_os_extreme  = prev_tsi is not None and prev_tsi < -self.ob_extreme
-        was_ob_moderate = prev_tsi is not None and prev_tsi >  self.ob_moderate
+        was_ob_extreme = prev_tsi is not None and prev_tsi > self.ob_extreme
+        was_os_extreme = prev_tsi is not None and prev_tsi < -self.ob_extreme
+        was_ob_moderate = prev_tsi is not None and prev_tsi > self.ob_moderate
         was_os_moderate = prev_tsi is not None and prev_tsi < -self.ob_moderate
 
         self._prev_tsi = tsi
@@ -210,7 +204,7 @@ class MultiTFTSI:
             if self._tp is not None and bar.high >= self._tp:
                 self._sl = self._tp = None
                 return Signal.FLAT
-            if crossed_down:                       # momentum reversal → exit
+            if crossed_down:  # momentum reversal → exit
                 self._sl = self._tp = None
                 return Signal.FLAT
             return Signal.LONG
@@ -222,7 +216,7 @@ class MultiTFTSI:
             if self._tp is not None and bar.low <= self._tp:
                 self._sl = self._tp = None
                 return Signal.FLAT
-            if crossed_up:                         # momentum reversal → exit
+            if crossed_up:  # momentum reversal → exit
                 self._sl = self._tp = None
                 return Signal.FLAT
             return Signal.SHORT

@@ -40,6 +40,8 @@ from pathlib import Path
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
+from novax.bot.dispatch import dispatch_signal
+from novax.bot.registry import UserRepository
 from novax.data.ingest.twelvedata import fetch_bars
 from novax.engine import BarView, Position, Signal
 from novax.live import (
@@ -79,6 +81,7 @@ from novax.live import (
     make_signal_id,
     score_signal,
 )
+from novax.sessions import primary_session
 from novax.strategies.weekly_bos_retest import WeeklyBOSRetest
 
 # ---------------------------------------------------------------------------
@@ -137,9 +140,9 @@ class _State:
         self.log = log
         self.paper_entry_id: str | None = None
         self.consecutive_failures: int = 0
-        # last scan result — used by /signal command
         self.last_result: MultiTFScanResult | None = None
         self.last_price: float | None = None
+        self.repo: UserRepository | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -509,6 +512,17 @@ async def _handle_15m(bot: Bot, state: _State) -> None:
         "Alert sent: %s %s score=%d", state.symbol, result.direction.value, sc.total
     )
 
+    if state.repo is not None:
+
+        async def _send(uid: int, text: str) -> None:
+            await bot.send_message(chat_id=uid, text=text, parse_mode="Markdown")
+
+        try:
+            n = await dispatch_signal(sig, state.repo, _send, primary_session)
+            state.log.info("Fan-out dispatched to %d user(s)", n)
+        except Exception as exc:
+            state.log.error("Fan-out error (non-fatal): %s", exc)
+
 
 async def _handle_market_update_4h(bot: Bot, state: _State) -> None:
     """4H market update — price + bias, no trade required."""
@@ -819,6 +833,16 @@ def main() -> None:
 
     log = _setup_logging(args.log_file)
 
+    database_url = os.environ.get("DATABASE_URL", "").strip() or None
+    repo: UserRepository | None = None
+    if database_url is not None:
+        from novax.bot.db_postgres import connect_and_prepare  # noqa: PLC0415
+
+        repo = connect_and_prepare(database_url)
+        log.info("Fan-out: PostgresUserRepository ready")
+    else:
+        log.info("Fan-out: DATABASE_URL not set — per-user fan-out disabled")
+
     symbol = args.symbol.upper()
     state_dir = Path(args.state_dir)
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -853,6 +877,7 @@ def main() -> None:
         state_dir=state_dir,
         log=log,
     )
+    state.repo = repo
 
     shutdown_event = asyncio.Event()
 

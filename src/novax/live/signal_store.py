@@ -90,9 +90,9 @@ class SignalWeights:
     """
 
     structure: int = 30
-    momentum:  int = 30
-    session:   int = 20
-    cost:      int = 20
+    momentum: int = 30
+    session: int = 20
+    cost: int = 20
 
     def __post_init__(self) -> None:
         total = self.structure + self.momentum + self.session + self.cost
@@ -101,8 +101,12 @@ class SignalWeights:
 
     def to_json(self) -> str:
         return json.dumps(
-            {"structure": self.structure, "momentum": self.momentum,
-             "session": self.session, "cost": self.cost}
+            {
+                "structure": self.structure,
+                "momentum": self.momentum,
+                "session": self.session,
+                "cost": self.cost,
+            }
         )
 
     @classmethod
@@ -115,12 +119,12 @@ STATIC_WEIGHTS = SignalWeights(structure=30, momentum=30, session=20, cost=20)
 
 
 class SignalStatus(StrEnum):
-    PENDING   = "pending"
+    PENDING = "pending"
     CONFIRMED = "confirmed"
-    ACTIVE    = "active"
-    WIN       = "win"
-    LOSS      = "loss"
-    EXPIRED   = "expired"
+    ACTIVE = "active"
+    WIN = "win"
+    LOSS = "loss"
+    EXPIRED = "expired"
 
     @property
     def is_closed(self) -> bool:
@@ -132,49 +136,49 @@ class StoredSignal:
     """Full representation of one signal in the DuckDB store."""
 
     # Identity
-    id:           str
-    ts:           datetime           # emission UTC
-    symbol:       str
-    source:       str                # "15m_scan" | "daily" | "weekly" | ...
-    direction:    str | None         # "LONG" | "SHORT" | None
+    id: str
+    ts: datetime  # emission UTC
+    symbol: str
+    source: str  # "15m_scan" | "daily" | "weekly" | ...
+    direction: str | None  # "LONG" | "SHORT" | None
 
     # Multi-TF state
-    h4_signal:    str
-    h1_signal:    str
-    m15_signal:   str
-    confluence:   bool
+    h4_signal: str
+    h1_signal: str
+    m15_signal: str
+    confluence: bool
 
     # Entry levels
-    entry_price:  float | None
-    sl:           float | None
-    tp:           float | None
-    rr:           float | None       # tp_pips / sl_pips
-    sl_pips:      float | None
+    entry_price: float | None
+    sl: float | None
+    tp: float | None
+    rr: float | None  # tp_pips / sl_pips
+    sl_pips: float | None
 
     # Score
-    score:        SignalScore
+    score: SignalScore
     score_weights: SignalWeights
 
     # Confidence
-    confidence_pct:   float          # Wilson lower bound [0.0, 1.0]
-    confidence_n:     int            # sample size used
-    confidence_label: str            # ESTABLISHED | DEVELOPING | INSUFFICIENT
+    confidence_pct: float  # Wilson lower bound [0.0, 1.0]
+    confidence_n: int  # sample size used
+    confidence_label: str  # ESTABLISHED | DEVELOPING | INSUFFICIENT
 
     # Market context
-    regime:       str                # trending | ranging | volatile | unknown
+    regime: str  # trending | ranging | volatile | unknown
 
     # Lifecycle
-    status:       SignalStatus = SignalStatus.PENDING
-    status_ts:    datetime | None = None
+    status: SignalStatus = SignalStatus.PENDING
+    status_ts: datetime | None = None
 
     # Outcome (filled on close)
-    outcome_pnl_pips:  float | None = None
-    outcome_bars_held: int | None   = None
-    max_adverse_pips:  float | None = None
-    max_favor_pips:    float | None = None
+    outcome_pnl_pips: float | None = None
+    outcome_bars_held: int | None = None
+    max_adverse_pips: float | None = None
+    max_favor_pips: float | None = None
 
     # Audit
-    created_at:   datetime = field(default_factory=lambda: datetime.now(tz=UTC))
+    created_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
 
 
 # ── DuckDB schema ────────────────────────────────────────────────────────────
@@ -256,18 +260,41 @@ class SignalStore:
                       ?, ?, ?, ?, ?,  ?, ?,  ?, ?, ?,  ?, ?, ?)
             """,
             [
-                sig.id, sig.ts, sig.symbol, sig.source, sig.direction,
-                sig.h4_signal, sig.h1_signal, sig.m15_signal, sig.confluence,
-                sig.entry_price, sig.sl, sig.tp, sig.rr, sig.sl_pips,
-                sig.score.total, sig.score.structure, sig.score.momentum,
-                sig.score.session, sig.score.cost,
-                sig.score.label, sig.score_weights.to_json(),
-                sig.confidence_pct, sig.confidence_n, sig.confidence_label,
-                sig.regime, sig.status.value, sig.created_at,
+                sig.id,
+                sig.ts,
+                sig.symbol,
+                sig.source,
+                sig.direction,
+                sig.h4_signal,
+                sig.h1_signal,
+                sig.m15_signal,
+                sig.confluence,
+                sig.entry_price,
+                sig.sl,
+                sig.tp,
+                sig.rr,
+                sig.sl_pips,
+                sig.score.total,
+                sig.score.structure,
+                sig.score.momentum,
+                sig.score.session,
+                sig.score.cost,
+                sig.score.label,
+                sig.score_weights.to_json(),
+                sig.confidence_pct,
+                sig.confidence_n,
+                sig.confidence_label,
+                sig.regime,
+                sig.status.value,
+                sig.created_at,
             ],
         )
-        log.debug("Signal inserted: %s score=%d conf=%.0f%%", sig.id[:8], sig.score.total,
-                  sig.confidence_pct * 100)
+        log.debug(
+            "Signal inserted: %s score=%d conf=%.0f%%",
+            sig.id[:8],
+            sig.score.total,
+            sig.confidence_pct * 100,
+        )
 
     def update_status(
         self,
@@ -281,7 +308,7 @@ class SignalStore:
         max_favor: float | None = None,
     ) -> None:
         """Update signal lifecycle. Called by the outcome tracker."""
-        ts = (now or datetime.now(tz=UTC))
+        ts = now or datetime.now(tz=UTC)
         self._con.execute(
             """
             UPDATE signals SET
@@ -351,7 +378,7 @@ class SignalStore:
         regime: str = "any",
         *,
         band_width: int = 10,
-        z: float = 1.645,       # 90% one-sided confidence interval
+        z: float = 1.645,  # 90% one-sided confidence interval
         min_samples: int = 20,
     ) -> tuple[float, int, str]:
         """Compute Wilson score interval lower bound for the win rate.
@@ -379,7 +406,7 @@ class SignalStore:
             return 0.5, n, "INSUFFICIENT"
 
         z2 = z * z
-        numerator   = p_hat + z2 / (2 * n) - z * sqrt(p_hat * (1 - p_hat) / n + z2 / (4 * n * n))
+        numerator = p_hat + z2 / (2 * n) - z * sqrt(p_hat * (1 - p_hat) / n + z2 / (4 * n * n))
         denominator = 1 + z2 / n
         wilson_lower = max(0.0, min(1.0, numerator / denominator))
 
@@ -396,9 +423,7 @@ class SignalStore:
 
     def recent(self, n: int = 20) -> list[dict[str, Any]]:
         """Return the last n signals as dicts (newest first)."""
-        cur = self._con.execute(
-            "SELECT * FROM signals ORDER BY ts DESC LIMIT ?", [n]
-        )
+        cur = self._con.execute("SELECT * FROM signals ORDER BY ts DESC LIMIT ?", [n])
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row, strict=False)) for row in cur.fetchall()]
 
@@ -454,9 +479,9 @@ class SignalStore:
             return {}
         return {
             "structure": round(row[0] or 0.0, 3),
-            "momentum":  round(row[1] or 0.0, 3),
-            "session":   round(row[2] or 0.0, 3),
-            "cost":      round(row[3] or 0.0, 3),
+            "momentum": round(row[1] or 0.0, 3),
+            "session": round(row[2] or 0.0, 3),
+            "cost": round(row[3] or 0.0, 3),
         }
 
     def suggest_weights(self) -> SignalWeights | None:
@@ -566,6 +591,7 @@ class SignalStore:
 
 
 # ── Signal ID helper ─────────────────────────────────────────────────────────
+
 
 def make_signal_id(symbol: str, ts: datetime, source: str) -> str:
     """Stable, deterministic signal ID — SHA-256 of key fields."""

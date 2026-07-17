@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}NovaxFX Admin{% endblock %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f4f6f9; color: #1a1a2e; min-height: 100vh; }
+    nav { background: #1a1a2e; color: #fff; display: flex; align-items: center; gap: 1.5rem; padding: .75rem 1.5rem; }
+    nav a { color: #a0c4ff; text-decoration: none; font-size: .9rem; }
+    nav a:hover { color: #fff; }
+    nav .spacer { flex: 1; }
+    nav form { display: inline; }
+    nav button { background: transparent; border: 1px solid #a0c4ff; color: #a0c4ff; padding: .3rem .8rem; border-radius: 4px; cursor: pointer; font-size: .85rem; }
+    nav button:hover { background: #a0c4ff; color: #1a1a2e; }
+    main { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.6rem; margin-bottom: 1.25rem; color: #1a1a2e; }
+    h2 { font-size: 1.15rem; margin-bottom: .75rem; color: #333; }
+    .card { background: #fff; border-radius: 8px; padding: 1.5rem; box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 1.25rem; }
+    .badge-ok  { display: inline-block; padding: .2rem .6rem; border-radius: 999px; background: #d4edda; color: #155724; font-size: .8rem; font-weight: 600; }
+    .badge-err { display: inline-block; padding: .2rem .6rem; border-radius: 999px; background: #f8d7da; color: #721c24; font-size: .8rem; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th, td { text-align: left; padding: .5rem .75rem; border-bottom: 1px solid #e9ecef; }
+    th { background: #f8f9fa; font-weight: 600; }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+{% if admin_user is defined and admin_user %}
+<nav>
+  <strong>NovaxFX Admin</strong>
+  <a href="/">Dashboard</a>
+  <a href="/health">Health</a>
+  <span class="spacer"></span>
+  <span style="font-size:.85rem; opacity:.7">{{ admin_user }}</span>
+  <form method="post" action="/logout">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Logout</button>
+  </form>
+</nav>
+{% endif %}
+<main>
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>
