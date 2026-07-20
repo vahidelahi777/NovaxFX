@@ -25,6 +25,8 @@ from .multi_tf_scanner import MultiTFScanner, MultiTFScanResult, TFSignal
 from .news_gate import EconomicEvent, NewsGate
 from .paper_trader import EventKind, PaperEvent, PaperPosition, PaperTrader
 from .perf import PerformanceReport, compute_performance
+from .recovery import reconcile_on_boot
+from .risk_governor import RiskGovernor, RiskLedger, trading_day
 from .scheduler import BarScheduler, H4BarScheduler
 from .signal_scanner import ScanResult, SignalScanner
 from .signal_score import SignalScore, confidence_label, score_signal
@@ -63,6 +65,10 @@ __all__ = [
     "LevelStore",
     "MultiTFScanResult",
     "MultiTFScanner",
+    "RiskGovernor",
+    "RiskLedger",
+    "reconcile_on_boot",
+    "trading_day",
     "PaperEvent",
     "PaperPosition",
     "PaperTrader",

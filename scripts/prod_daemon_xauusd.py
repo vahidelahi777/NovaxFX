@@ -31,11 +31,10 @@ import logging.handlers
 import os
 import sys
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TypeVar
 
 from telegram import Bot, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -43,6 +42,9 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from novax.bot.dispatch import dispatch_signal
 from novax.bot.registry import UserRepository
 from novax.data.ingest.twelvedata import fetch_bars
+from novax.data.retry import retry_fetch
+from novax.data.stream.resilient_stream import ResilientStream
+from novax.data_sources import Bar
 from novax.engine import BarView, Position, Signal
 from novax.live import (
     STATIC_WEIGHTS,
@@ -55,6 +57,7 @@ from novax.live import (
     MultiTFScanResult,
     NewsGate,
     PaperTrader,
+    RiskGovernor,
     ScanResult,
     SignalRecord,
     SignalStatus,
@@ -80,19 +83,20 @@ from novax.live import (
     fmt_weekly_performance,
     fmt_weekly_report,
     make_signal_id,
+    reconcile_on_boot,
     score_signal,
 )
 from novax.live.london_sweep_scanner import LondonSweepScanner
 from novax.sessions import primary_session
 from novax.strategies.weekly_bos_retest import WeeklyBOSRetest
 
+_T = TypeVar("_T")
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
-_ALERT_SCORE_THRESHOLD = 70          # raised from 65 — cut MEDIUM signals
-_FETCH_RETRIES = 3
-_FETCH_RETRY_DELAYS = (15, 45, 120)
+_ALERT_SCORE_THRESHOLD = 70  # raised from 65 — cut MEDIUM signals
 _XAUUSD_PIP = 0.1
 
 # ---------------------------------------------------------------------------
@@ -113,6 +117,7 @@ class _State:
         signal_store: SignalStore,
         news_gate: NewsGate,
         paper_trader: PaperTrader,
+        risk_governor: RiskGovernor,
         event_sched: EventScheduler,
         lookback_h4: int,
         lookback_h1: int,
@@ -132,6 +137,7 @@ class _State:
         self.signal_store = signal_store
         self.news_gate = news_gate
         self.paper_trader = paper_trader
+        self.risk_governor = risk_governor
         self.event_sched = event_sched
         self.lookback_h4 = lookback_h4
         self.lookback_h1 = lookback_h1
@@ -142,11 +148,12 @@ class _State:
         self.score_threshold = score_threshold
         self.state_dir = state_dir
         self.log = log
-        self.paper_entry_id: str | None = None
         self.consecutive_failures: int = 0
         self.last_result: MultiTFScanResult | None = None
         self.last_price: float | None = None
         self.repo: UserRepository | None = None
+        self.stream_mode: bool = False
+        self.stream_fallback: bool = False  # True when stream crashed → use scheduler
 
 
 # ---------------------------------------------------------------------------
@@ -157,9 +164,7 @@ class _State:
 def _setup_logging(log_file: str | None) -> logging.Logger:
     log = logging.getLogger("prod_daemon_xauusd")
     log.setLevel(logging.DEBUG)
-    fmt = logging.Formatter(
-        "%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-    )
+    fmt = logging.Formatter("%(asctime)s %(levelname)-8s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
     sh = logging.StreamHandler(sys.stdout)
     sh.setFormatter(fmt)
     log.addHandler(sh)
@@ -185,37 +190,57 @@ def _fetch_all(
     lookback_m15: int,
     api_key: str,
     log: logging.Logger | None = None,
+    sleep_fn: Callable[[float], None] = time.sleep,
 ) -> tuple[list[object], list[object], list[object]]:
     now = datetime.now(tz=UTC)
-    last_exc: Exception | None = None
 
-    for attempt in range(_FETCH_RETRIES):
-        if attempt > 0:
-            delay = _FETCH_RETRY_DELAYS[attempt - 1]
-            if log:
-                log.warning(
-                    "Fetch attempt %d/%d failed — retrying in %ds: %s",
-                    attempt, _FETCH_RETRIES, delay, last_exc,
-                )
-            time.sleep(delay)
-        try:
-            bars_h4 = fetch_bars(
-                symbol=symbol, interval="4h",
-                start=now - timedelta(days=lookback_h4), end=now, api_key=api_key,
-            )
-            bars_h1 = fetch_bars(
-                symbol=symbol, interval="1h",
-                start=now - timedelta(days=lookback_h1), end=now, api_key=api_key,
-            )
-            bars_m15 = fetch_bars(
-                symbol=symbol, interval="15min",
-                start=now - timedelta(days=lookback_m15), end=now, api_key=api_key,
-            )
-            return bars_h4, bars_h1, bars_m15
-        except (urllib.error.URLError, OSError) as exc:
-            last_exc = exc
+    def _do() -> tuple[list[object], list[object], list[object]]:
+        h4 = fetch_bars(
+            symbol=symbol,
+            interval="4h",
+            start=now - timedelta(days=lookback_h4),
+            end=now,
+            api_key=api_key,
+        )
+        h1 = fetch_bars(
+            symbol=symbol,
+            interval="1h",
+            start=now - timedelta(days=lookback_h1),
+            end=now,
+            api_key=api_key,
+        )
+        m15 = fetch_bars(
+            symbol=symbol,
+            interval="15min",
+            start=now - timedelta(days=lookback_m15),
+            end=now,
+            api_key=api_key,
+        )
+        return h4, h1, m15
 
-    raise last_exc  # type: ignore[misc]
+    return retry_fetch(_do, log=log, sleep_fn=sleep_fn)
+
+
+def _fetch_bars_with_retry(
+    symbol: str,
+    interval: str,
+    lookback_days: int,
+    api_key: str,
+    log: logging.Logger | None = None,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> list[object]:
+    now = datetime.now(tz=UTC)
+    return retry_fetch(
+        lambda: fetch_bars(
+            symbol=symbol,
+            interval=interval,
+            start=now - timedelta(days=lookback_days),
+            end=now,
+            api_key=api_key,
+        ),
+        log=log,
+        sleep_fn=sleep_fn,
+    )
 
 
 def _bos_state_from_h4(bars_h4: list[object]) -> str:
@@ -284,9 +309,7 @@ async def _cmd_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text("⏳ Scanner warming up — try again in a few minutes.")
         return
 
-    msg = fmt_cmd_signal(
-        state.symbol, state.last_result, state.last_price, datetime.now(tz=UTC)
-    )
+    msg = fmt_cmd_signal(state.symbol, state.last_result, state.last_price, datetime.now(tz=UTC))
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 
@@ -322,35 +345,45 @@ async def _handle_15m(bot: Bot, state: _State) -> None:
     now = datetime.now(tz=UTC)
     state.log.info(
         "Fetching %s bars — 4H:%dd  1H:%dd  15M:%dd",
-        state.symbol, state.lookback_h4, state.lookback_h1, state.lookback_m15,
+        state.symbol,
+        state.lookback_h4,
+        state.lookback_h1,
+        state.lookback_m15,
     )
     try:
-        bars_h4, bars_h1, bars_m15 = _fetch_all(
-            state.symbol, state.lookback_h4, state.lookback_h1,
-            state.lookback_m15, state.api_key, log=state.log,
+        bars_h4, bars_h1, bars_m15 = await asyncio.to_thread(
+            _fetch_all,
+            state.symbol,
+            state.lookback_h4,
+            state.lookback_h1,
+            state.lookback_m15,
+            state.api_key,
+            state.log,
         )
     except Exception as exc:  # noqa: BLE001
         state.consecutive_failures += 1
         state.log.error(
             "All fetch retries failed (consecutive=%d): %s",
-            state.consecutive_failures, exc,
+            state.consecutive_failures,
+            exc,
         )
         if state.consecutive_failures == 1 or state.consecutive_failures % 4 == 0:
             await bot.send_message(
                 chat_id=state.notif_chat_id,
                 text=(
-                    f"⚠️ *{state.symbol} Network Error*\n"
+                    f"⚠️ {state.symbol} Network Error\n"
                     f"Cannot reach TwelveData ({state.consecutive_failures} "
-                    f"consecutive failures).\n`{type(exc).__name__}: {exc}`"
+                    f"consecutive failures).\n{type(exc).__name__}: {exc}"
                 ),
-                parse_mode="Markdown",
             )
         return
 
     state.consecutive_failures = 0
     state.log.info(
         "Bars fetched — 4H:%d  1H:%d  15M:%d",
-        len(bars_h4), len(bars_h1), len(bars_m15),
+        len(bars_h4),
+        len(bars_h1),
+        len(bars_m15),
     )
 
     result: MultiTFScanResult = state.scanner.scan(bars_h4, bars_h1, bars_m15)
@@ -361,16 +394,15 @@ async def _handle_15m(bot: Bot, state: _State) -> None:
         state.last_price = bars_m15[-1].close
 
     sc = score_signal(
-        result, now,
+        result,
+        now,
         w_structure=STATIC_WEIGHTS.structure,
         w_momentum=STATIC_WEIGHTS.momentum,
         w_session=STATIC_WEIGHTS.session,
         w_cost=STATIC_WEIGHTS.cost,
     )
 
-    conf_pct, conf_n, conf_stored_label = state.signal_store.confidence(
-        sc.total, regime="unknown"
-    )
+    conf_pct, conf_n, conf_stored_label = state.signal_store.confidence(sc.total, regime="unknown")
 
     rr: float | None = None
     sl_pips: float | None = None
@@ -411,32 +443,47 @@ async def _handle_15m(bot: Bot, state: _State) -> None:
         ev = state.paper_trader.update(paper_scan, bars_m15[-1])  # type: ignore[arg-type]
 
         if ev.kind in (EventKind.ENTRY_LONG, EventKind.ENTRY_SHORT):
-            state.paper_entry_id = sig.id
+            state.paper_trader.set_entry_link(sig.id)
             state.signal_store.update_status(sig.id, SignalStatus.ACTIVE)
             state.log.info(
                 "PaperTrader ENTRY %s  entry=%.2f  SL=%s  TP=%s",
-                ev.kind, ev.price,
+                ev.kind,
+                ev.price,
                 f"{ev.sl:.2f}" if ev.sl else "n/a",
                 f"{ev.tp:.2f}" if ev.tp else "n/a",
             )
         elif ev.kind in (EventKind.EXIT_TP, EventKind.EXIT_SL, EventKind.EXIT_SIGNAL):
             pnl_pips = round(ev.pnl / _XAUUSD_PIP, 1) if ev.pnl is not None else None
             status = (
-                SignalStatus.WIN if ev.kind == EventKind.EXIT_TP
-                else SignalStatus.LOSS if ev.kind == EventKind.EXIT_SL
+                SignalStatus.WIN
+                if ev.kind == EventKind.EXIT_TP
+                else SignalStatus.LOSS
+                if ev.kind == EventKind.EXIT_SL
                 else SignalStatus.EXPIRED
             )
-            if state.paper_entry_id is not None:
-                state.signal_store.update_status(
-                    state.paper_entry_id, status, pnl_pips=pnl_pips
-                )
-                state.paper_entry_id = None
+            entry_id = state.paper_trader.position.entry_signal_id
+            if entry_id is not None:
+                state.signal_store.update_status(entry_id, status, pnl_pips=pnl_pips)
+                state.paper_trader.clear_entry_link()
             state.log.info(
                 "PaperTrader EXIT  %s  exit=%.2f  pnl=%.1f pips  cum=%.2f",
-                ev.kind, ev.price,
+                ev.kind,
+                ev.price,
                 pnl_pips if pnl_pips is not None else 0.0,
                 ev.cumulative_pnl,
             )
+            # Record fill in R-multiples for risk governor
+            if pnl_pips is not None and sl_pips is not None and sl_pips > 0:
+                pnl_r = pnl_pips / sl_pips
+                tripped = state.risk_governor.record_fill(pnl_r, now)
+                if tripped:
+                    await bot.send_message(
+                        chat_id=state.notif_chat_id,
+                        text=(
+                            f"🛑 {state.symbol} RiskGovernor HALT\n"
+                            f"{state.risk_governor.ledger.halt_reason}"
+                        ),
+                    )
 
     # Legacy JSONL store
     state.level_store.append_signal(
@@ -468,29 +515,40 @@ async def _handle_15m(bot: Bot, state: _State) -> None:
     if not result.confluence:
         state.log.info(
             "No confluence — 4H_trend=%s BOS=%s 1H=%s",
-            result.h4_trend.value, result.h4.signal.value, result.h1.signal.value,
+            result.h4_trend.value,
+            result.h4.signal.value,
+            result.h1.signal.value,
         )
+        return
+
+    # Risk governor halt gate
+    if state.risk_governor.is_halted(now):
+        state.log.info("No alert: RiskGovernor halted (%s)", state.risk_governor.ledger.halt_reason)
         return
 
     # Hard gate: 15M EMACross must confirm direction
     if result.m15.signal != result.direction:
         state.log.info(
             "No alert: 15M=%s does not confirm direction=%s",
-            result.m15.signal.value, result.direction.value,
+            result.m15.signal.value,
+            result.direction.value,
         )
         return
 
     if sc.total < state.score_threshold:
         state.log.info(
             "No alert: score %d < threshold %d [%s]",
-            sc.total, state.score_threshold, sc.label,
+            sc.total,
+            state.score_threshold,
+            sc.label,
         )
         return
 
     if state.news_gate.is_blocked(now):
         state.log.info(
             "No alert: signal blocked by news gate (%s %s)",
-            state.symbol, now.strftime("%H:%M UTC"),
+            state.symbol,
+            now.strftime("%H:%M UTC"),
         )
         return
 
@@ -512,9 +570,7 @@ async def _handle_15m(bot: Bot, state: _State) -> None:
     await bot.send_message(chat_id=state.chat_id, text=msg, parse_mode="Markdown")
     alert_state.update(result.direction.value, result.h4.last_bar_ts)
     state.alert_store.save(alert_state)
-    state.log.info(
-        "Alert sent: %s %s score=%d", state.symbol, result.direction.value, sc.total
-    )
+    state.log.info("Alert sent: %s %s score=%d", state.symbol, result.direction.value, sc.total)
 
     if state.repo is not None:
 
@@ -522,7 +578,13 @@ async def _handle_15m(bot: Bot, state: _State) -> None:
             await bot.send_message(chat_id=uid, text=text, parse_mode="Markdown")
 
         try:
-            n = await dispatch_signal(sig, state.repo, _send, primary_session)
+            n = await dispatch_signal(
+                sig,
+                state.repo,
+                _send,
+                primary_session,
+                killswitch=lambda: state.risk_governor.is_halted(),
+            )
             state.log.info("Fan-out dispatched to %d user(s)", n)
         except Exception as exc:
             state.log.error("Fan-out error (non-fatal): %s", exc)
@@ -532,9 +594,14 @@ async def _handle_market_update_4h(bot: Bot, state: _State) -> None:
     """4H market update — price + bias, no trade required."""
     now = datetime.now(tz=UTC)
     try:
-        bars_h4, bars_h1, bars_m15 = _fetch_all(
-            state.symbol, state.lookback_h4, state.lookback_h1,
-            state.lookback_m15, state.api_key, log=state.log,
+        bars_h4, bars_h1, bars_m15 = await asyncio.to_thread(
+            _fetch_all,
+            state.symbol,
+            state.lookback_h4,
+            state.lookback_h1,
+            state.lookback_m15,
+            state.api_key,
+            state.log,
         )
     except Exception:  # noqa: BLE001
         state.log.exception("market_update_4h: fetch failed")
@@ -555,12 +622,14 @@ async def _handle_market_update_4h(bot: Bot, state: _State) -> None:
 
 async def _handle_london_sweep(bot: Bot, state: _State) -> None:
     """London open sweep-and-reject scan — fires at 08:00 UTC Mon–Fri."""
-    now = datetime.now(tz=UTC)
     try:
-        bars_h1 = fetch_bars(
-            symbol=state.symbol, interval="1h",
-            start=now - timedelta(days=7), end=now,
-            api_key=state.api_key,
+        bars_h1 = await asyncio.to_thread(
+            _fetch_bars_with_retry,
+            state.symbol,
+            "1h",
+            7,
+            state.api_key,
+            state.log,
         )
     except Exception:  # noqa: BLE001
         state.log.exception("london_sweep: fetch failed")
@@ -584,18 +653,23 @@ async def _handle_london_sweep(bot: Bot, state: _State) -> None:
 
     msg = fmt_sweep_alert(result)
     await bot.send_message(chat_id=state.chat_id, text=msg, parse_mode="Markdown")
-    state.log.info(
-        "London sweep alert sent: %s %s", state.symbol, result.direction.value
-    )
+    state.log.info("London sweep alert sent: %s %s", state.symbol, result.direction.value)
 
 
 async def _handle_market_open(bot: Bot, state: _State) -> None:
     now = datetime.now(tz=UTC)
-    bars_h4 = fetch_bars(
-        symbol=state.symbol, interval="4h",
-        start=now - timedelta(days=state.lookback_h4), end=now,
-        api_key=state.api_key,
-    )
+    try:
+        bars_h4 = await asyncio.to_thread(
+            _fetch_bars_with_retry,
+            state.symbol,
+            "4h",
+            state.lookback_h4,
+            state.api_key,
+            state.log,
+        )
+    except Exception:  # noqa: BLE001
+        state.log.exception("market_open: fetch failed")
+        return
     if not bars_h4:
         state.log.warning("market_open: no 4H bars returned")
         return
@@ -603,7 +677,8 @@ async def _handle_market_open(bot: Bot, state: _State) -> None:
     prev_week_start = current_week_start(now) - timedelta(weeks=1)
     prev_week_end = current_week_start(now)
     prev_bars = [
-        b for b in bars_h4
+        b
+        for b in bars_h4
         if prev_week_start <= b.ts.astimezone(UTC) < prev_week_end  # type: ignore[attr-defined]
     ]
     prev_week = compute_week_levels(prev_bars, prev_week_start) if prev_bars else None
@@ -630,11 +705,18 @@ async def _handle_market_open(bot: Bot, state: _State) -> None:
 
 async def _handle_market_close(bot: Bot, state: _State) -> None:
     now = datetime.now(tz=UTC)
-    bars_h4 = fetch_bars(
-        symbol=state.symbol, interval="4h",
-        start=now - timedelta(days=state.lookback_h4), end=now,
-        api_key=state.api_key,
-    )
+    try:
+        bars_h4 = await asyncio.to_thread(
+            _fetch_bars_with_retry,
+            state.symbol,
+            "4h",
+            state.lookback_h4,
+            state.api_key,
+            state.log,
+        )
+    except Exception:  # noqa: BLE001
+        state.log.exception("market_close: fetch failed")
+        return
     if not bars_h4:
         state.log.warning("market_close: no 4H bars returned")
         return
@@ -663,11 +745,18 @@ async def _handle_market_close(bot: Bot, state: _State) -> None:
 
 async def _handle_weekly_report(bot: Bot, state: _State) -> None:
     now = datetime.now(tz=UTC)
-    bars_h4 = fetch_bars(
-        symbol=state.symbol, interval="4h",
-        start=now - timedelta(days=state.lookback_h4), end=now,
-        api_key=state.api_key,
-    )
+    try:
+        bars_h4 = await asyncio.to_thread(
+            _fetch_bars_with_retry,
+            state.symbol,
+            "4h",
+            state.lookback_h4,
+            state.api_key,
+            state.log,
+        )
+    except Exception:  # noqa: BLE001
+        state.log.exception("weekly_report: fetch failed")
+        return
     if not bars_h4:
         state.log.warning("weekly_report: no 4H bars returned")
         return
@@ -686,12 +775,8 @@ async def _handle_weekly_report(bot: Bot, state: _State) -> None:
         losses = state.signal_store.count_by_status(SignalStatus.LOSS)
         total = state.signal_store.total_count()
         cum_pips = state.signal_store.cumulative_pnl_pips()
-        perf_msg = fmt_weekly_performance(
-            state.symbol, total, wins, losses, cum_pips, now
-        )
-        await bot.send_message(
-            chat_id=state.chat_id, text=perf_msg, parse_mode="Markdown"
-        )
+        perf_msg = fmt_weekly_performance(state.symbol, total, wins, losses, cum_pips, now)
+        await bot.send_message(chat_id=state.chat_id, text=perf_msg, parse_mode="Markdown")
     except Exception:  # noqa: BLE001
         state.log.exception("weekly P&L summary failed")
 
@@ -700,21 +785,19 @@ async def _handle_weekly_report(bot: Bot, state: _State) -> None:
 
 async def _handle_session_open(bot: Bot, state: _State, session: str) -> None:
     now = datetime.now(tz=UTC)
-    bars_m15 = fetch_bars(
-        symbol=state.symbol, interval="15min",
-        start=now - timedelta(days=state.lookback_m15), end=now,
-        api_key=state.api_key,
-    )
-    bars_h4 = fetch_bars(
-        symbol=state.symbol, interval="4h",
-        start=now - timedelta(days=14), end=now,
-        api_key=state.api_key,
-    )
-    bars_h1 = fetch_bars(
-        symbol=state.symbol, interval="1h",
-        start=now - timedelta(days=7), end=now,
-        api_key=state.api_key,
-    )
+    try:
+        bars_h4, bars_h1, bars_m15 = await asyncio.to_thread(
+            _fetch_all,
+            state.symbol,
+            14,
+            7,
+            state.lookback_m15,
+            state.api_key,
+            state.log,
+        )
+    except Exception:  # noqa: BLE001
+        state.log.exception("%s_open: fetch failed", session.lower())
+        return
     if not bars_m15:
         state.log.warning("%s_open: no bars", session.lower())
         return
@@ -723,21 +806,28 @@ async def _handle_session_open(bot: Bot, state: _State, session: str) -> None:
     current_price = bars_m15[-1].close  # type: ignore[attr-defined]
 
     msg = fmt_session_open(
-        state.symbol, session, current_price,
-        result.h4.signal, result.h1.signal, now,
+        state.symbol,
+        session,
+        current_price,
+        result.h4.signal,
+        result.h1.signal,
+        now,
     )
     await bot.send_message(chat_id=state.chat_id, text=msg, parse_mode="Markdown")
-    state.log.info(
-        "%s open alert sent: %s price=%.2f", session, state.symbol, current_price
-    )
+    state.log.info("%s open alert sent: %s price=%.2f", session, state.symbol, current_price)
 
 
 async def _handle_daily_report(bot: Bot, state: _State) -> None:
     now = datetime.now(tz=UTC)
     try:
-        bars_h4, bars_h1, bars_m15 = _fetch_all(
-            state.symbol, state.lookback_h4, state.lookback_h1,
-            state.lookback_m15, state.api_key, log=state.log,
+        bars_h4, bars_h1, bars_m15 = await asyncio.to_thread(
+            _fetch_all,
+            state.symbol,
+            state.lookback_h4,
+            state.lookback_h1,
+            state.lookback_m15,
+            state.api_key,
+            state.log,
         )
     except Exception:  # noqa: BLE001
         state.log.exception("daily_report: fetch failed")
@@ -757,10 +847,13 @@ async def _handle_daily_report(bot: Bot, state: _State) -> None:
     # Monthly archival
     if now.day == 1:
         prev_month = now.month - 1 if now.month > 1 else 12
-        prev_year  = now.year if now.month > 1 else now.year - 1
+        prev_year = now.year if now.month > 1 else now.year - 1
         archive_path = (
-            state.state_dir / "signals_archive" / state.symbol
-            / f"{prev_year}" / f"{prev_month:02d}.parquet"
+            state.state_dir
+            / "signals_archive"
+            / state.symbol
+            / f"{prev_year}"
+            / f"{prev_month:02d}.parquet"
         )
         try:
             n = state.signal_store.export_month(prev_year, prev_month, archive_path)
@@ -768,7 +861,9 @@ async def _handle_daily_report(bot: Bot, state: _State) -> None:
             total = state.signal_store.total_count()
             state.log.info(
                 "Monthly archive: exported %d signals → %s  (store now has %d rows)",
-                n, archive_path, total,
+                n,
+                archive_path,
+                total,
             )
         except Exception:  # noqa: BLE001
             state.log.exception("Monthly signal archival failed")
@@ -779,13 +874,51 @@ async def _handle_daily_report(bot: Bot, state: _State) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _touch_heartbeat(state_dir: Path) -> None:
+    """Touch the heartbeat file so the Docker healthcheck can verify liveness."""
+    hb = state_dir / "heartbeat"
+    hb.touch()
+
+
+def _events_to_fire(events: list[EventType], *, stream_active: bool) -> list[EventType]:
+    """Filter scheduled events based on stream mode.
+
+    In stream mode, BAR_CLOSE_15M is driven by the bar queue consumer, not the
+    scheduler.  All other events fire normally.
+    """
+    if not stream_active:
+        return list(events)
+    return [e for e in events if e != EventType.BAR_CLOSE_15M]
+
+
+async def _stream_consumer(
+    bot: Bot,
+    state: _State,
+    bar_queue: asyncio.Queue[Bar],
+) -> None:
+    """Consume bars from the ResilientStream queue and run _handle_15m logic.
+
+    Runs until the task is cancelled or falls back on unhandled crash.
+    On crash, sets state.stream_fallback = True so the scheduler resumes 15M events.
+    """
+    while True:
+        _bar: Bar = await bar_queue.get()
+        state.log.debug("Stream bar received: %s close=%.2f", _bar.ts, _bar.close)
+        try:
+            await _handle_15m(bot, state)
+        except Exception:
+            state.log.exception("_stream_consumer: _handle_15m raised")
+
+
 async def _scheduler_loop(app: Application, state: _State) -> None:  # type: ignore[type-arg]
     bot: Bot = app.bot
     shutdown: asyncio.Event = app.bot_data["shutdown"]
 
     state.log.info("Scheduler loop started")
+    _touch_heartbeat(state.state_dir)
 
     while not shutdown.is_set():
+        _touch_heartbeat(state.state_dir)
         now = datetime.now(tz=UTC)
         fire_at, events = state.event_sched.next_events(now)
 
@@ -805,7 +938,8 @@ async def _scheduler_loop(app: Application, state: _State) -> None:  # type: ign
         if shutdown.is_set():
             break
 
-        for event in events:
+        stream_active = state.stream_mode and not state.stream_fallback
+        for event in _events_to_fire(events, stream_active=stream_active):
             try:
                 if event == EventType.BAR_CLOSE_15M:
                     await _handle_15m(bot, state)
@@ -846,7 +980,9 @@ def main() -> None:
     parser.add_argument("--state-dir", default="data/")
     parser.add_argument("--log-file", default=None)
     parser.add_argument(
-        "--score-threshold", type=int, default=_ALERT_SCORE_THRESHOLD,
+        "--score-threshold",
+        type=int,
+        default=_ALERT_SCORE_THRESHOLD,
         help="Minimum signal score (0–100) for Telegram alert",
     )
     parser.add_argument("--ema-fast", type=int, default=20)
@@ -854,6 +990,12 @@ def main() -> None:
     parser.add_argument("--ob-buffer-pips", type=float, default=5.0)
     parser.add_argument("--max-risk-pips", type=float, default=80.0)
     parser.add_argument("--risk-reward", type=float, default=2.0)
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        default=False,
+        help="Use WebSocket stream for 15M bars instead of REST polling",
+    )
     args = parser.parse_args()
 
     api_key = os.environ.get("TWELVEDATA_API_KEY", "")
@@ -899,6 +1041,7 @@ def main() -> None:
         },
     )
     sweep_scanner = LondonSweepScanner(symbol)
+    risk_governor = RiskGovernor(state_dir / f"risk_ledger_{symbol}.json")
 
     state = _State(
         symbol=symbol,
@@ -909,6 +1052,7 @@ def main() -> None:
         signal_store=SignalStore(state_dir / f"signals_{symbol}.duckdb"),
         news_gate=NewsGate(api_key=api_key),
         paper_trader=PaperTrader(state_dir / f"paper_{symbol}.json"),
+        risk_governor=risk_governor,
         event_sched=EventScheduler(),
         lookback_h4=args.lookback_4h,
         lookback_h1=args.lookback_1h,
@@ -921,12 +1065,14 @@ def main() -> None:
         log=log,
     )
     state.repo = repo
+    state.stream_mode = args.stream
 
     shutdown_event = asyncio.Event()
 
     async def post_init(application: Application) -> None:
         application.bot_data["state"] = state
         application.bot_data["shutdown"] = shutdown_event
+        reconcile_on_boot(state.paper_trader, state.signal_store, log)
         first_fire, first_events = state.event_sched.next_events(datetime.now(tz=UTC))
         await application.bot.send_message(
             chat_id=state.notif_chat_id,
@@ -940,6 +1086,37 @@ def main() -> None:
         )
         log.info("Startup notification sent: %s", symbol)
         asyncio.create_task(_scheduler_loop(application, state))
+
+        if state.stream_mode:
+            bar_queue: asyncio.Queue[Bar] = asyncio.Queue()
+            resilient = ResilientStream(
+                api_key=api_key,
+                symbol=symbol,
+                interval_seconds=900,
+                bar_queue=bar_queue,
+            )
+
+            async def _stream_supervisor() -> None:
+                try:
+                    await resilient.run()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.exception(
+                        "Stream supervisor crashed — falling back to scheduler 15M events"
+                    )
+                    state.stream_fallback = True
+                    await application.bot.send_message(
+                        chat_id=state.notif_chat_id,
+                        text=(
+                            f"[{symbol}] Stream supervisor crashed. "
+                            "Falling back to REST polling for 15M bars."
+                        ),
+                    )
+
+            asyncio.create_task(_stream_consumer(application.bot, state, bar_queue))
+            asyncio.create_task(_stream_supervisor())
+            log.info("Stream mode enabled — ResilientStream started for %s", symbol)
 
     async def post_stop(application: Application) -> None:
         shutdown_event.set()
@@ -957,10 +1134,10 @@ def main() -> None:
         .post_stop(post_stop)
         .build()
     )
-    app.add_handler(CommandHandler("start",  _cmd_start))
-    app.add_handler(CommandHandler("help",   _cmd_help))
+    app.add_handler(CommandHandler("start", _cmd_start))
+    app.add_handler(CommandHandler("help", _cmd_help))
     app.add_handler(CommandHandler("signal", _cmd_signal))
-    app.add_handler(CommandHandler("stats",  _cmd_stats))
+    app.add_handler(CommandHandler("stats", _cmd_stats))
 
     log.info("Daemon started (V3) — %s  state-dir=%s", symbol, state_dir)
     app.run_polling(drop_pending_updates=True)

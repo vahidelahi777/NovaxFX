@@ -53,6 +53,7 @@ class PaperPosition:
     tp: float | None = None
     cumulative_pnl: float = 0.0
     trade_count: int = 0
+    entry_signal_id: str | None = None
 
 
 class PaperTrader:
@@ -83,6 +84,16 @@ class PaperTrader:
     @property
     def position(self) -> PaperPosition:
         return self._pos
+
+    def set_entry_link(self, sig_id: str) -> None:
+        """Persist the signal-store row ID for the current open position."""
+        self._pos.entry_signal_id = sig_id
+        self._save()
+
+    def clear_entry_link(self) -> None:
+        """Clear the persisted signal-store link (called on close)."""
+        self._pos.entry_signal_id = None
+        self._save()
 
     def update(self, result: ScanResult, last_bar: Bar) -> PaperEvent:
         """Advance paper state by one scanner snapshot.

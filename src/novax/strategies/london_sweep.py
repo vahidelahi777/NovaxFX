@@ -40,11 +40,11 @@ from ..indicators import ATRIndicator
 
 __all__ = ["LondonOpenSweep"]
 
-_ASIAN_HOURS: frozenset[int] = frozenset(range(0, 7))   # 00–06 UTC inclusive
+_ASIAN_HOURS: frozenset[int] = frozenset(range(0, 7))  # 00–06 UTC inclusive
 _LONDON_HOURS: frozenset[int] = frozenset(range(7, 12))  # 07–11 UTC inclusive
-_LONDON_CLOSE_HOUR: int = 12                              # reset at or after this hour
+_LONDON_CLOSE_HOUR: int = 12  # reset at or after this hour
 
-_MIN_ASIAN_BARS: int = 5   # warmup: need at least this many Asian bars before signalling
+_MIN_ASIAN_BARS: int = 5  # warmup: need at least this many Asian bars before signalling
 
 
 @dataclass

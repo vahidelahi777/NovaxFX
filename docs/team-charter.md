@@ -17,8 +17,10 @@ How the "company" runs. Each role is a **Claude capability**, not a persistent h
 | 7   | **DevOps**                | "Handle deploy / CI for X"                                       | Works the existing CI/CD, Docker, Hetzner, monitoring                 | Green pipeline / runbook                   |
 | 8   | **Researcher**            | "Researcher: review market for X" (or the weekly scheduled task) | Competitors, AI tooling, regs, pricing → concrete plan changes        | Memo in `docs/research-log.md` + new tasks |
 | 9   | **Compliance (advisory)** | "Compliance check on X"                                          | Flags custody/advice/licensing risks (general info, not legal advice) | Risk note                                  |
+| 10  | **Chief Risk Officer**    | "Risk sign-off on X"                                             | Signs off promotions (paper→semi→auto, model shadow→live) against pre-committed criteria; owns limits & halts | Sign-off in `decision-log.md`              |
 
 > **Rule:** anything touching validated strategy gates or real money must pass QA (#6) + Forex-expert (#5), and hard risk limits always sit above any AI output (instruction-hierarchy safety).
+> **Rule:** no role — including CEO-advisor — can waive a guardrail; only the Risk Officer (#10) signs promotions, and only against the criteria pre-committed in `decision-log.md`. The human CEO retains ultimate override, always logged.
 
 ---
 

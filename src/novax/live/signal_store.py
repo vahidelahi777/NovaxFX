@@ -578,6 +578,13 @@ class SignalStore:
         ).fetchone()
         return int(row[0]) if row else 0
 
+    def ids_by_status(self, status: SignalStatus) -> list[str]:
+        """Return all signal IDs with the given status."""
+        rows = self._con.execute(
+            "SELECT id FROM signals WHERE status = ?", [status.value]
+        ).fetchall()
+        return [row[0] for row in rows]
+
     def cumulative_pnl_pips(self) -> float:
         """Return sum of pnl_pips for all closed (WIN/LOSS) signals."""
         row = self._con.execute(

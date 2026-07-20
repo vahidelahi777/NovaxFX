@@ -101,7 +101,11 @@ class BarBuilder:
             bid = float(event.get("bid") or price)
             ask = float(event.get("ask") or price)
             volume = float(event.get("last_volume") or 0)
-            tick_ts = int(event.get("timestamp") or event.get("last_trade_time", 0))
+            raw_ts = event.get("timestamp") or event.get("last_trade_time")
+            if raw_ts is None:
+                log.warning("Rejecting tick with no timestamp: %s", event)
+                return
+            tick_ts = int(raw_ts)
         except (KeyError, ValueError, TypeError) as exc:
             log.debug("Skipping malformed tick: %s — %s", event, exc)
             return

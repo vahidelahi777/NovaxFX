@@ -23,15 +23,15 @@ _FLAT_POS = Position(direction="FLAT")
 @dataclass(frozen=True)
 class SweepScanResult:
     symbol: str
-    signal: Signal           # LONG | SHORT | FLAT
-    confluence: bool         # True when signal != FLAT
-    direction: Signal        # same as signal
+    signal: Signal  # LONG | SHORT | FLAT
+    confluence: bool  # True when signal != FLAT
+    direction: Signal  # same as signal
     entry_price: float | None
     sl: float | None
     tp: float | None
     asian_high: float | None
     asian_low: float | None
-    high_vol_skip: bool      # True when vol filter suppressed a potential sweep
+    high_vol_skip: bool  # True when vol filter suppressed a potential sweep
     scanned_at: datetime
 
 
@@ -81,6 +81,7 @@ class LondonSweepScanner:
 
         for i, _bar in enumerate(bars_1h):
             from ..engine import BarView  # local to avoid circular at module level
+
             view = BarView(bars=tuple(bars_1h[: i + 1]))
             last_signal = strat.on_bar(view, _FLAT_POS)
 
@@ -93,10 +94,10 @@ class LondonSweepScanner:
             confluence=last_signal != Signal.FLAT,
             direction=last_signal,
             entry_price=last_bar.close if last_signal != Signal.FLAT else None,
-            sl=strat._sl,   # noqa: SLF001
-            tp=strat._tp,   # noqa: SLF001
+            sl=strat._sl,  # noqa: SLF001
+            tp=strat._tp,  # noqa: SLF001
             asian_high=strat._asian_high,  # noqa: SLF001
-            asian_low=strat._asian_low,    # noqa: SLF001
+            asian_low=strat._asian_low,  # noqa: SLF001
             high_vol_skip=False,  # suppression is handled inside the strategy
             scanned_at=ts,
         )
